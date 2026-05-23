@@ -605,6 +605,7 @@ function toBase64(file) {
   });
 }
 
+// eslint-disable-next-line no-unused-vars
 function isImage(file) {
   return file.type.startsWith("image/");
 }
@@ -660,8 +661,10 @@ async function pdfToImageBase64(file) {
 // ─── SSN Scrubbing ────────────────────────────────────────────────────────────
 // Converts file to an image on a canvas, blacks out SSN patterns, returns base64
 // SSN pattern: XXX-XX-XXXX or XXXXXXXXX (9 digits)
+// eslint-disable-next-line no-unused-vars
 const SSN_PATTERN = /\b\d{3}-\d{2}-\d{4}\b|\b\d{9}\b/g;
 
+// eslint-disable-next-line no-unused-vars
 async function scrubSSNFromImage(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -725,6 +728,7 @@ const SUGGESTED_QUESTIONS = [
 ];
 
 // ─── Feedback Form Component ─────────────────────────────────────────────────
+// eslint-disable-next-line no-unused-vars
 function FeedbackForm({ lang }) {
   const [rating, setRating] = useState(null);
   const [comment, setComment] = useState("");
@@ -812,7 +816,8 @@ function TaxChat() {
       .map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text }));
 
     try {
-      const geminiChatMessages = [
+      // eslint-disable-next-line no-unused-vars
+const geminiChatMessages = [
         { role: "user", parts: [{ text: CHAT_SYSTEM + "\n\nUser: " + userText }] },
         ...history.slice(1).map((m) => ({
           role: m.role === "assistant" ? "model" : "user",
