@@ -1158,7 +1158,7 @@ const T = {
     docsDesc: "Esto es lo que encontramos en sus documentos:",
     questions: "❓ Unas Preguntas Rápidas",
     questionsDesc: "Por favor responda estas preguntas para completar su 1040 correctamente.",
-    calculate: "📊 Calcular Mi 1040",
+    calculate: "📊 Calcular Mi 1040-SR",
     draftSummary: "📋 Su Formulario 1040-SR — Borrador",
     draftDesc: "Cada línea corresponde a una línea real del Formulario 1040 del IRS (2025).",
     nextSteps: "📌 Próximos Pasos",
@@ -1284,7 +1284,12 @@ export default function App() {
   }
 
   function allAnswered() {
-    return QUESTIONS.every((q) => answers[q.id]);
+    const visibleQuestions = QUESTIONS.filter(q => {
+      if (q.showIfMarried && answers.married !== "Married Filing Jointly") return false;
+      if (q.showIfCapGains && answers.hasCapitalGains !== "Yes") return false;
+      return true;
+    });
+    return visibleQuestions.every((q) => answers[q.id]);
   }
 
   function computeResults() {
