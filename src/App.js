@@ -208,133 +208,7 @@ const styles = {
   },
   progressStepActive: { background: colors.primary, color: "#fff" },
   progressStepDone: { background: colors.successLight, color: colors.success },
-  // ── Chat styles ──
-  chatFab: {
-    position: "fixed",
-    bottom: "28px",
-    right: "28px",
-    width: "68px",
-    height: "68px",
-    borderRadius: "50%",
-    background: colors.accent,
-    color: "#fff",
-    fontSize: "30px",
-    border: "none",
-    cursor: "pointer",
-    boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-    transition: "transform 0.2s",
-  },
-  chatPanel: {
-    position: "fixed",
-    bottom: "110px",
-    right: "28px",
-    width: "380px",
-    maxWidth: "calc(100vw - 40px)",
-    height: "520px",
-    background: colors.card,
-    borderRadius: "20px",
-    boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-    border: `1px solid ${colors.border}`,
-    display: "flex",
-    flexDirection: "column",
-    zIndex: 1000,
-    overflow: "hidden",
-  },
-  chatHeader: {
-    background: colors.primary,
-    color: "#fff",
-    padding: "16px 20px",
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    flexShrink: 0,
-  },
-  chatMessages: {
-    flex: 1,
-    overflowY: "auto",
-    padding: "16px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-  },
-  msgUser: {
-    alignSelf: "flex-end",
-    background: colors.primary,
-    color: "#fff",
-    padding: "12px 16px",
-    borderRadius: "16px 16px 4px 16px",
-    maxWidth: "80%",
-    fontSize: "16px",
-    lineHeight: "1.5",
-  },
-  msgAI: {
-    alignSelf: "flex-start",
-    background: colors.primaryLight,
-    color: colors.text,
-    padding: "12px 16px",
-    borderRadius: "16px 16px 16px 4px",
-    maxWidth: "85%",
-    fontSize: "16px",
-    lineHeight: "1.6",
-  },
-  msgTyping: {
-    alignSelf: "flex-start",
-    background: colors.primaryLight,
-    padding: "12px 16px",
-    borderRadius: "16px 16px 16px 4px",
-    fontSize: "20px",
-    letterSpacing: "4px",
-  },
-  chatInputRow: {
-    display: "flex",
-    gap: "8px",
-    padding: "12px 16px",
-    borderTop: `1px solid ${colors.border}`,
-    flexShrink: 0,
-  },
-  chatInput: {
-    flex: 1,
-    padding: "12px 16px",
-    fontSize: "16px",
-    borderRadius: "10px",
-    border: `1.5px solid ${colors.border}`,
-    outline: "none",
-    fontFamily: "inherit",
-    resize: "none",
-  },
-  chatSend: {
-    padding: "12px 18px",
-    background: colors.primary,
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    fontSize: "20px",
-    cursor: "pointer",
-    flexShrink: 0,
-  },
-  suggestedQuestions: {
-    padding: "0 16px 12px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "6px",
-    flexShrink: 0,
-  },
-  suggestedBtn: {
-    padding: "8px 14px",
-    background: colors.accentLight,
-    border: `1px solid #F0C48A`,
-    borderRadius: "8px",
-    color: colors.accent,
-    fontSize: "14px",
-    cursor: "pointer",
-    textAlign: "left",
-    fontFamily: "inherit",
-    fontWeight: "bold",
-  },
+
   loadingDot: {
     display: "inline-block",
     width: "10px",
@@ -387,6 +261,14 @@ FOR A 1099-DIV (Dividends):
 - Box 1b "Qualified dividends" → "qualifiedDividends"
 - Box 2a "Total capital gain distributions" → "capitalGainsNet"
 - Box 4 "Federal income tax withheld" → "federalTaxWithheld"
+
+IMPORTANT TIPS FOR READING W-2 FORMS:
+- The dollar amounts appear to the RIGHT of the box labels
+- Box 1 amount is usually the largest number in the top-right area
+- Box 2 (federal tax withheld) is usually smaller than Box 1
+- Numbers may appear as "75000.00" or "$75,000.00" — both are valid
+- If you see amounts like 75000.00, 9500.00, 4650.00, 1087.50 — these are likely Box 1, 2, 4, 6
+- The employer name appears in the top-left section (Box c)
 
 RETURN ONLY valid JSON — no markdown fences, no explanation text, nothing else:
 {"documentType":"W-2","employerOrPayer":"","wages":0,"federalTaxWithheld":0,"stateTaxWithheld":0,"socialSecurityWages":0,"socialSecurityTaxWithheld":0,"medicareTaxWithheld":0,"retirementDistribution":0,"socialSecurityBenefits":0,"interestIncome":0,"dividendIncome":0,"qualifiedDividends":0,"capitalGainsNet":0,"longTermGains":0,"shortTermGains":0,"capitalGainsProceeds":0,"capitalGainsBasis":0,"notes":""}
@@ -689,25 +571,48 @@ async function pdfToImageBase64(file) {
         });
       }
 
-      // Read PDF file as ArrayBuffer
+      // Read PDF as ArrayBuffer
       const arrayBuffer = await file.arrayBuffer();
-      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
-      // Render first page at high resolution
-      const page = await pdf.getPage(1);
-      const viewport = page.getViewport({ scale: 2.0 }); // 2x = clearer image
+      // Load with form fields enabled
+      const pdf = await window.pdfjsLib.getDocument({
+        data: arrayBuffer,
+        enableXfa: true,
+        renderInteractiveForms: true,
+      }).promise;
 
-      const canvas = document.createElement("canvas");
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      const ctx = canvas.getContext("2d");
+      // Render ALL pages and stitch together for multi-page W-2s
+      const numPages = Math.min(pdf.numPages, 2); // first 2 pages max
+      const canvases = [];
 
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 3.0 }); // 3x for clarity
 
-      // Export as PNG base64 (strip the data:image/png;base64, prefix)
-      const dataUrl = canvas.toDataURL("image/png");
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext("2d");
+
+        // White background first
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        await page.render({
+          canvasContext: ctx,
+          viewport,
+          renderInteractiveForms: true,
+          annotationMode: 2, // ENABLE annotations/form fields
+        }).promise;
+
+        canvases.push(canvas);
+      }
+
+      // Use just page 1 (the actual W-2 form with data)
+      const finalCanvas = canvases[0];
+      const dataUrl = finalCanvas.toDataURL("image/png", 1.0);
       const base64 = dataUrl.split(",")[1];
-      console.log("📄 PDF converted to image successfully, size:", base64.length);
+      console.log("📄 PDF converted to image, size:", base64.length, "px:", finalCanvas.width + "x" + finalCanvas.height);
       resolve(base64);
     } catch (err) {
       console.error("PDF conversion error:", err);
@@ -759,31 +664,6 @@ You MUST:
 `; 
 
 // ─── Chat system prompt ───────────────────────────────────────────────────────
-const CHAT_SYSTEM = `You are a friendly, patient bilingual tax assistant helping seniors fill out IRS Form 1040-SR-SR. You speak both English and Spanish — respond in the same language the user writes in. 
-
-Rules:
-- Use plain English. No jargon. Explain any tax term you use.
-- Keep answers SHORT (3–5 sentences max). Seniors prefer brief, clear answers.
-- Be warm and encouraging. Never make the person feel stupid for asking.
-- Always end answers about tax decisions with: "A tax professional can confirm this for your specific situation."
-- Never give a definitive "you owe X" or "your refund is X" — only estimates.
-- If asked about something unrelated to taxes, gently redirect: "I'm here to help with your tax questions!"
-- Topics you know well: W-2s, 1099s, Social Security income, standard deductions for seniors, retirement income, Medicare premiums, filing status, refunds, IRS deadlines.`;
-
-const SUGGESTED_QUESTIONS = [
-  "What is a standard deduction?",
-  "Is my Social Security income taxable?",
-  "What does 'filing status' mean?",
-  "What is a W-2 form?",
-  "What is a 1099-R?",
-  "Why might I owe money this year?",
-  "What is the deadline to file my taxes?",
-  "Can I deduct my Medicare premiums?",
-  "¿Qué es una deducción estándar?",
-  "¿Es mi Seguro Social gravable?",
-  "¿Qué es un formulario W-2?",
-  "¿Cuándo es la fecha límite para presentar impuestos?",
-];
 
 // ─── Terms of Use Modal ──────────────────────────────────────────────────────
 function TermsModal({ lang, onAccept }) {
@@ -948,148 +828,7 @@ function FeedbackForm({ lang }) {
   );
 }
 
-// ─── TaxChat Component ────────────────────────────────────────────────────────
-function TaxChat() {
-  const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      text: "👋 Hi! I'm your tax helper. Ask me anything about your 1040 — in plain English. I'm here to help!",
-    },
-  ]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [showSuggested, setShowSuggested] = useState(true);
-  const bottomRef = useRef(null);
 
-  useEffect(() => {
-    if (open) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, open]);
-
-  async function sendMessage(text) {
-    const userText = text || input.trim();
-    if (!userText || loading) return;
-    setInput("");
-    setShowSuggested(false);
-    setMessages((prev) => [...prev, { role: "user", text: userText }]);
-    setLoading(true);
-
-    // Build history for context (skip the welcome message)
-    const history = messages
-      .filter((m) => m.role === "user" || (m.role === "assistant" && m !== messages[0]))
-      .map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text }));
-
-    try {
-      // eslint-disable-next-line no-unused-vars
-const geminiChatMessages = [
-        { role: "user", parts: [{ text: CHAT_SYSTEM + "\n\nUser: " + userText }] },
-        ...history.slice(1).map((m) => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content }],
-        })),
-        { role: "user", parts: [{ text: userText }] },
-      ];
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${process.env.REACT_APP_GEMINI_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: CHAT_SYSTEM + "\n\nNow answer this question from a senior: " + userText }] }] }),
-        }
-      );
-      const data = await response.json();
-      const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't get a response. Please try again.";
-      setMessages((prev) => [...prev, { role: "assistant", text: reply }]);
-    } catch {
-      setMessages((prev) => [...prev, { role: "assistant", text: "Sorry, something went wrong. Please try again." }]);
-    }
-    setLoading(false);
-  }
-
-  return (
-    <>
-      {/* Floating button */}
-      <button
-        style={{
-          ...styles.chatFab,
-          transform: open ? "scale(0.9)" : "scale(1)",
-        }}
-        onClick={() => setOpen((o) => !o)}
-        title="Ask a tax question"
-      >
-        {open ? "✕" : "💬"}
-      </button>
-
-      {/* Chat panel */}
-      {open && (
-        <div style={styles.chatPanel}>
-          {/* Header */}
-          <div style={styles.chatHeader}>
-            <span style={{ fontSize: "24px" }}>🤖</span>
-            <div>
-              <div style={{ fontWeight: "bold", fontSize: "17px" }}>Tax Question Helper</div>
-              <div style={{ fontSize: "13px", opacity: 0.85 }}>Ask me anything — I speak English & Español</div>
-            </div>
-            <button
-              onClick={() => setOpen(false)}
-              style={{ marginLeft: "auto", background: "none", border: "none", color: "#fff", fontSize: "20px", cursor: "pointer" }}
-            >✕</button>
-          </div>
-
-          {/* Messages */}
-          <div style={styles.chatMessages}>
-            {messages.map((m, i) => (
-              <div key={i} style={m.role === "user" ? styles.msgUser : styles.msgAI}>
-                {m.text}
-              </div>
-            ))}
-            {loading && <div style={styles.msgTyping}>· · ·</div>}
-            <div ref={bottomRef} />
-          </div>
-
-          {/* Suggested questions */}
-          {showSuggested && (
-            <div style={styles.suggestedQuestions}>
-              <div style={{ fontSize: "13px", color: colors.textMuted, marginBottom: "2px", paddingLeft: "2px" }}>
-                Tap a question to get started:
-              </div>
-              {SUGGESTED_QUESTIONS.slice(0, 3).map((q) => (
-                <button key={q} style={styles.suggestedBtn} onClick={() => sendMessage(q)}>
-                  {q}
-                </button>
-              ))}
-              <button
-                style={{ ...styles.suggestedBtn, background: "transparent", border: "none", color: colors.textMuted, fontSize: "13px" }}
-                onClick={() => setShowSuggested(false)}
-              >
-                See all questions ▾
-              </button>
-            </div>
-          )}
-
-          {/* Input */}
-          <div style={styles.chatInputRow}>
-            <textarea
-              style={styles.chatInput}
-              rows={2}
-              placeholder="Type your question here…"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-            />
-            <button
-              style={{ ...styles.chatSend, opacity: loading ? 0.5 : 1 }}
-              onClick={() => sendMessage()}
-              disabled={loading}
-            >
-              ➤
-            </button>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
 
 // ─── Line Explainers ─────────────────────────────────────────────────────────
 const LINE_EXPLAINERS = {
@@ -1823,8 +1562,7 @@ export default function App() {
         )}
       </div>
 
-      {/* Floating chat assistant — available on every step */}
-      <TaxChat />
+
 
       {/* Footer */}
       <div style={{ background: colors.primary, color: "#fff", padding: "20px 32px", textAlign: "center", fontSize: "13px", opacity: 0.9, lineHeight: "1.8" }}>
