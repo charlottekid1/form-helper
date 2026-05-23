@@ -728,7 +728,6 @@ const SUGGESTED_QUESTIONS = [
 ];
 
 // ─── Terms of Use Modal ──────────────────────────────────────────────────────
-// eslint-disable-next-line no-unused-vars
 function TermsModal({ lang, onAccept }) {
   return (
     <div style={{
@@ -1126,7 +1125,6 @@ const T = {
 export default function App() {
   const [step, setStep] = useState(0);
   const [lang, setLang] = useState("en");
-  // eslint-disable-next-line no-unused-vars
   const [hasAccepted, setHasAccepted] = useState(false);
   const [explainer, setExplainer] = useState(null); // 0=upload, 1=processing, 2=qa, 3=results
   const [files, setFiles] = useState([]);
@@ -1755,6 +1753,11 @@ export default function App() {
 
       {/* Floating chat assistant — available on every step */}
       <TaxChat />
+
+      {/* Terms of Use Modal — shown on first visit, blocks entire app */}
+      {!hasAccepted && (
+        <TermsModal lang={lang} onAccept={() => setHasAccepted(true)} />
+      )}
 
       {/* Footer */}
       <div style={{ background: colors.primary, color: "#fff", padding: "20px 32px", textAlign: "center", fontSize: "13px", opacity: 0.9, lineHeight: "1.8" }}>
