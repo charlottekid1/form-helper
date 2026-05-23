@@ -1240,6 +1240,11 @@ export default function App() {
 
   return (
     <div style={styles.app}>
+      {/* Terms of Use Modal — MUST be first, blocks everything */}
+      {!hasAccepted && (
+        <TermsModal lang={lang} onAccept={() => setHasAccepted(true)} />
+      )}
+
       {/* Header */}
       <div style={styles.header}>
         <span style={styles.headerIcon}>📋</span>
@@ -1753,11 +1758,6 @@ export default function App() {
 
       {/* Floating chat assistant — available on every step */}
       <TaxChat />
-
-      {/* Terms of Use Modal — shown on first visit, blocks entire app */}
-      {!hasAccepted && (
-        <TermsModal lang={lang} onAccept={() => setHasAccepted(true)} />
-      )}
 
       {/* Footer */}
       <div style={{ background: colors.primary, color: "#fff", padding: "20px 32px", textAlign: "center", fontSize: "13px", opacity: 0.9, lineHeight: "1.8" }}>
