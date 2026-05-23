@@ -562,9 +562,15 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   const provisionalIncome = data.wages + data.retirementDistribution + data.interestIncome + data.dividendIncome + capitalGainsForSS + data.socialSecurityBenefits * 0.5;
   const ssTaxable = provisionalIncome > 34000 ? data.socialSecurityBenefits * 0.85 : provisionalIncome > 25000 ? data.socialSecurityBenefits * 0.5 : 0;
 
-  // Capital gains — net (gains minus losses, max loss deduction $3,000)
-  const netCapGains = Math.max(data.capitalGainsNet, -3000);
-  const longTermGains = data.longTermGains || (netCapGains > 0 ? netCapGains : 0);
+  // Capital gains — from uploaded 1099-B OR manual Q&A entry
+  const manualCapGains = parseFloat(manualInputs.capitalGainsManual) || 0;
+  const rawCapGains = data.capitalGainsNet !== 0 ? data.capitalGainsNet : manualCapGains;
+  const isLongTerm = answers.capitalGainsType === "Yes — held over 1 year (long-term)" ||
+                     answers.capitalGainsType === "Mix of both";
+  const netCapGains = answers.hasCapitalGains === "No" ? 0 : Math.max(rawCapGains, -3000);
+  const longTermGains = isLongTerm
+    ? Math.max(0, netCapGains)
+    : (data.longTermGains || 0);
 
   // Total income (Line 9)
   const totalIncome = data.wages + data.retirementDistribution + ssTaxable + data.interestIncome + data.dividendIncome + netCapGains;
@@ -1110,23 +1116,23 @@ const LINE_EXPLAINERS = {
 // ─── Translations ────────────────────────────────────────────────────────────
 const T = {
   en: {
-    uploadTitle: {T[lang].uploadTitle},
+    uploadTitle: "📂 Upload Your Tax Documents",
     uploadDesc: "Upload your W-2, 1099-R (retirement), SSA-1099 (Social Security), 1099-INT (bank interest), or other tax forms. You can upload multiple files. We accept PDF or photos (JPG, PNG).",
-    uploadBtn: {T[lang].uploadBtn},
-    tapHere: {T[lang].tapHere},
-    dragDrop: {T[lang].dragDrop},
-    accepts: {T[lang].accepts},
-    noFiles: {T[lang].noFiles},
-    docsRead: {T[lang].docsRead},
-    docsDesc: {T[lang].docsDesc},
-    questions: {T[lang].questions},
-    questionsDesc: {T[lang].questionsDesc},
-    calculate: {T[lang].calculate},
-    draftSummary: {T[lang].draftSummary},
-    draftDesc: {T[lang].draftDesc},
-    nextSteps: {T[lang].nextSteps},
-    printPage: {T[lang].printPage},
-    startOver: {T[lang].startOver},
+    uploadBtn: "🔍 Read My Documents with AI",
+    tapHere: "Tap here to choose files",
+    dragDrop: "or drag and drop them here",
+    accepts: "Accepts: PDF, JPG, PNG",
+    noFiles: "No files uploaded yet. Tap above to get started.",
+    docsRead: "✅ Documents Read Successfully",
+    docsDesc: "Here is what we found in your tax documents:",
+    questions: "❓ A Few Quick Questions",
+    questionsDesc: "Please answer these questions so we can fill out your 1040-SR correctly. Tap your answer.",
+    calculate: "📊 Calculate My 1040-SR",
+    draftSummary: "📋 Your Form 1040-SR — Draft Summary",
+    draftDesc: "Each line below matches a real line on IRS Form 1040-SR (2025).",
+    nextSteps: "📌 What to Do Next",
+    printPage: "🖨️ Print This Page",
+    startOver: "🔄 Start Over",
     downloadLetter: "📄 Download Summary Letter",
     findVITA: "📍 Find Free Tax Help Near You",
     disclaimer: "Important: This AI assistant helps you prepare a draft of your 1040. It is not a licensed tax preparer. Always review the results with a tax professional or at a free IRS VITA site before filing.",
