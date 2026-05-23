@@ -728,6 +728,7 @@ const SUGGESTED_QUESTIONS = [
 ];
 
 // ─── Terms of Use Modal ──────────────────────────────────────────────────────
+// eslint-disable-next-line no-unused-vars
 function TermsModal({ lang, onAccept }) {
   return (
     <div style={{
@@ -1125,6 +1126,7 @@ const T = {
 export default function App() {
   const [step, setStep] = useState(0);
   const [lang, setLang] = useState("en");
+  // eslint-disable-next-line no-unused-vars
   const [hasAccepted, setHasAccepted] = useState(false);
   const [explainer, setExplainer] = useState(null); // 0=upload, 1=processing, 2=qa, 3=results
   const [files, setFiles] = useState([]);
