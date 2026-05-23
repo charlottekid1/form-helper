@@ -727,6 +727,112 @@ const SUGGESTED_QUESTIONS = [
   "¿Cuándo es la fecha límite para presentar impuestos?",
 ];
 
+// ─── Terms of Use Modal ──────────────────────────────────────────────────────
+function TermsModal({ lang, onAccept }) {
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(0,0,0,0.7)", zIndex: 9999,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "16px",
+    }}>
+      <div style={{
+        background: "#fff", borderRadius: "20px", maxWidth: "520px", width: "100%",
+        maxHeight: "90vh", overflowY: "auto",
+        boxShadow: "0 8px 40px rgba(0,0,0,0.3)",
+      }}>
+        {/* Header */}
+        <div style={{ background: colors.primary, borderRadius: "20px 20px 0 0", padding: "24px", textAlign: "center" }}>
+          <div style={{ fontSize: "36px", marginBottom: "8px" }}>📋</div>
+          <div style={{ color: "#fff", fontSize: "22px", fontWeight: "bold" }}>Form Helper</div>
+          <div style={{ color: "rgba(255,255,255,0.85)", fontSize: "15px", marginTop: "4px" }}>
+            {lang === "es" ? "Términos de Uso y Aviso de Privacidad" : "Terms of Use & Privacy Notice"}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "24px" }}>
+          <div style={{ background: colors.warningLight, border: `1px solid #F9CA3E`, borderRadius: "10px", padding: "14px 16px", marginBottom: "20px", fontSize: "15px", color: "#7D6608", lineHeight: "1.6" }}>
+            ⚠️ <strong>{lang === "es" ? "Importante:" : "Important:"}</strong>{" "}
+            {lang === "es"
+              ? "Form Helper es una herramienta educativa gratuita. NO es un preparador de impuestos con licencia. Todos los resultados son estimaciones y DEBEN ser revisados por un profesional antes de presentar."
+              : "Form Helper is a free educational tool. It is NOT a licensed tax preparer. All results are estimates and MUST be reviewed by a professional before filing."}
+          </div>
+
+          {[
+            {
+              icon: "📄",
+              title: lang === "es" ? "No es asesoramiento fiscal profesional" : "Not professional tax advice",
+              desc: lang === "es"
+                ? "Form Helper produce borradores de orientación solamente. No proporciona asesoramiento fiscal legal. Siempre verifique los resultados con un CPA, agente inscrito, o sitio VITA gratuito del IRS antes de presentar su declaración."
+                : "Form Helper produces draft guidance only. It does not provide legal tax advice. Always verify results with a CPA, enrolled agent, or free IRS VITA site before filing your return."
+            },
+            {
+              icon: "🔒",
+              title: lang === "es" ? "Sus documentos no se almacenan" : "Your documents are not stored",
+              desc: lang === "es"
+                ? "Los documentos que sube se procesan en su navegador y se envían a Google Gemini AI para leerlos. Este sitio web no almacena ningún documento, número de Seguro Social, ni información personal. Cerrar el navegador borra todo."
+                : "Documents you upload are processed in your browser and sent to Google Gemini AI to be read. This website stores no documents, Social Security Numbers, or personal information. Closing your browser erases everything."
+            },
+            {
+              icon: "🤖",
+              title: lang === "es" ? "Procesamiento de IA por Google" : "AI processing by Google",
+              desc: lang === "es"
+                ? "Esta aplicación usa la API de Google Gemini. En el nivel gratuito, Google puede usar los datos para mejorar sus modelos. Solo los montos en dólares se devuelven a la aplicación — nunca números de Seguro Social ni números de cuenta."
+                : "This app uses the Google Gemini API. On the free tier, Google may use inputs to improve their models. Only dollar amounts are returned to the app — never Social Security Numbers or account numbers."
+            },
+            {
+              icon: "⚖️",
+              title: lang === "es" ? "Limitación de responsabilidad" : "Limitation of liability",
+              desc: lang === "es"
+                ? "Form Helper se proporciona 'tal cual' sin garantías. Aarthi Nelatoor y Ardrey Kell High School no son responsables de errores en los resultados. Al usar esta aplicación, usted acepta que es responsable de verificar todos los números antes de presentar."
+                : "Form Helper is provided 'as is' without warranties. Aarthi Nelatoor and Ardrey Kell High School are not liable for errors in results. By using this app you agree you are responsible for verifying all figures before filing."
+            },
+            {
+              icon: "🎓",
+              title: lang === "es" ? "Proyecto estudiantil" : "Student project",
+              desc: lang === "es"
+                ? "Form Helper fue creado por una estudiante de secundaria como proyecto educativo. No está afiliado al IRS, ni a ningún preparador de impuestos con licencia, ni a ninguna institución financiera."
+                : "Form Helper was created by a high school student as an educational project. It is not affiliated with the IRS, any licensed tax preparer, or any financial institution."
+            },
+          ].map((item, i, arr) => (
+            <div key={i} style={{ display: "flex", gap: "14px", padding: "14px 0", borderBottom: i < arr.length - 1 ? `1px solid ${colors.border}` : "none" }}>
+              <span style={{ fontSize: "22px", flexShrink: 0 }}>{item.icon}</span>
+              <div>
+                <div style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "4px", color: colors.text }}>{item.title}</div>
+                <div style={{ fontSize: "13px", color: colors.textMuted, lineHeight: "1.6" }}>{item.desc}</div>
+              </div>
+            </div>
+          ))}
+
+          <div style={{ marginTop: "20px", fontSize: "13px", color: colors.textMuted, textAlign: "center", marginBottom: "16px" }}>
+            {lang === "es"
+              ? "Al tocar 'Acepto', confirma que ha leído y acepta estos términos."
+              : "By tapping 'I Agree', you confirm you have read and accept these terms."}
+          </div>
+
+          <button
+            onClick={onAccept}
+            style={{
+              width: "100%", padding: "18px", fontSize: "20px", fontWeight: "bold",
+              background: colors.primary, color: "#fff", border: "none",
+              borderRadius: "12px", cursor: "pointer",
+            }}
+          >
+            {lang === "es" ? "✅ Acepto — Comenzar" : "✅ I Agree — Get Started"}
+          </button>
+
+          <div style={{ textAlign: "center", marginTop: "12px", fontSize: "12px", color: colors.textMuted }}>
+            {lang === "es"
+              ? "Form Helper es gratuito para siempre. Sin registro. Sin almacenamiento de datos."
+              : "Form Helper is free forever. No sign-up. No data storage."}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Feedback Form Component ─────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
 function FeedbackForm({ lang }) {
@@ -1019,6 +1125,7 @@ const T = {
 export default function App() {
   const [step, setStep] = useState(0);
   const [lang, setLang] = useState("en");
+  const [hasAccepted, setHasAccepted] = useState(false);
   const [explainer, setExplainer] = useState(null); // 0=upload, 1=processing, 2=qa, 3=results
   const [files, setFiles] = useState([]);
   const [hovering, setHovering] = useState(false);
