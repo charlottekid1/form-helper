@@ -450,6 +450,27 @@ const QUESTIONS = [
     showInputIf: "Yes",
   },
   {
+    id: "spouseAge65",
+    text: "Is your spouse 65 years old or older?",
+    hint: "If your spouse is also 65+, you get an additional standard deduction bonus.",
+    options: ["Yes", "No"],
+    showIfMarried: true,
+  },
+  {
+    id: "spouseBlind",
+    text: "Is your spouse legally blind?",
+    hint: "This adds another bonus to your standard deduction.",
+    options: ["Yes", "No"],
+    showIfMarried: true,
+  },
+  {
+    id: "spouseIncome",
+    text: "Did your spouse have any income this year?",
+    hint: "When filing jointly, both spouses' income is combined on one return.",
+    options: ["Yes — I will upload their documents", "No income", "Not sure"],
+    showIfMarried: true,
+  },
+  {
     id: "estimatedTaxPayments",
     text: "Did you make quarterly estimated tax payments to the IRS this year?",
     hint: "Many retired seniors pay taxes quarterly instead of having them withheld.",
@@ -457,6 +478,29 @@ const QUESTIONS = [
     inputId: "estimatedTaxAmt",
     inputLabel: "Total estimated tax payments made ($)",
     showInputIf: "Yes",
+  },
+  {
+    id: "hasCapitalGains",
+    text: "Did you sell any stocks, bonds, mutual funds, or property this year?",
+    hint: "If yes, you should have received a 1099-B from your broker. Capital gains are taxed at special lower rates for seniors.",
+    options: ["Yes", "No", "Not sure"],
+  },
+  {
+    id: "capitalGainsType",
+    text: "Were these investments held for more than 1 year before selling?",
+    hint: "Investments held over 1 year are 'long-term' and taxed at 0%, 15%, or 20% — much lower than ordinary income rates.",
+    options: ["Yes — held over 1 year (long-term)", "No — held under 1 year (short-term)", "Mix of both", "Not sure"],
+    showIfCapGains: true,
+  },
+  {
+    id: "capitalGainsAmt",
+    text: "What was your approximate net capital gain or loss?",
+    hint: "Net gain = what you sold it for minus what you paid for it. Check your 1099-B for this number. If you lost money, that is a loss.",
+    options: ["I have a gain", "I have a loss", "About even / not sure"],
+    showIfCapGains: true,
+    inputId: "capitalGainsManual",
+    inputLabel: "Enter your net capital gain or loss ($) — use a minus sign for losses",
+    showInputIf: "I have a gain",
   },
   {
     id: "itemize",
@@ -467,6 +511,10 @@ const QUESTIONS = [
 ];
 
 // ─── 1040 mapping logic ───────────────────────────────────────────────────────
+function is65OrSpouse65(answers) {
+  return answers.age65 === "Yes" || answers.spouseAge65 === "Yes";
+}
+
 function compute1040(extractedData, answers, manualInputs = {}) {
   const data = extractedData.reduce(
     (acc, doc) => ({
@@ -500,11 +548,14 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   const mortgageAmt = parseFloat(manualInputs.mortgageAmt) || 0;
   const estimatedPayments = parseFloat(manualInputs.estimatedTaxAmt) || 0;
 
-  // Standard deduction 2024
-  let stdDeduction = isMarried ? 29200 : 14600;
-  const extraPerCondition = isMarried ? 1550 : 1950;
+  // Standard deduction 2025 (IRS Rev. Proc. 2024-40)
+  let stdDeduction = isMarried ? 30000 : 15000;
+  const extraPerCondition = isMarried ? 1600 : 2000; // Age 65+ or blind bonus
   if (is65) stdDeduction += extraPerCondition;
   if (isBlind) stdDeduction += extraPerCondition;
+  // Spouse bonuses (married filing jointly only)
+  if (isMarried && answers.spouseAge65 === "Yes") stdDeduction += 1600;
+  if (isMarried && answers.spouseBlind === "Yes") stdDeduction += 1600;
 
   // SS taxability (up to 85% taxable based on provisional income)
   const capitalGainsForSS = Math.max(0, data.capitalGainsNet);
@@ -534,8 +585,8 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   // Ordinary income tax brackets 2024
   function calcOrdinaryTax(income, married) {
     const brackets = married
-      ? [[23200, 0.10], [94300, 0.12], [201050, 0.22], [383900, 0.24], [487450, 0.32], [731200, 0.35], [Infinity, 0.37]]
-      : [[11600, 0.10], [47150, 0.12], [100525, 0.22], [191950, 0.24], [243725, 0.32], [609350, 0.35], [Infinity, 0.37]];
+      ? [[23850, 0.10], [96950, 0.12], [206700, 0.22], [394600, 0.24], [501050, 0.32], [751600, 0.35], [Infinity, 0.37]]
+      : [[11925, 0.10], [48475, 0.12], [103350, 0.22], [197300, 0.24], [250525, 0.32], [626350, 0.35], [Infinity, 0.37]];
     let tax = 0, prev = 0;
     for (const [limit, rate] of brackets) {
       if (income <= prev) break;
@@ -548,8 +599,8 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   // Long-term capital gains tax (preferential rates 0%, 15%, 20%)
   function calcLTCGTax(ltcg, agi, married) {
     if (ltcg <= 0) return 0;
-    const zeroThreshold = married ? 94050 : 47025;
-    const fifteenThreshold = married ? 583750 : 518900;
+    const zeroThreshold = married ? 96700 : 48350;
+    const fifteenThreshold = married ? 600050 : 533400;
     if (agi <= zeroThreshold) return 0;
     if (agi <= fifteenThreshold) return Math.round(ltcg * 0.15);
     return Math.round(ltcg * 0.20);
@@ -574,6 +625,7 @@ function compute1040(extractedData, answers, manualInputs = {}) {
     line5a_ssBenefits: data.socialSecurityBenefits,
     line5b_taxableSS: Math.round(ssTaxable),
     line6b_capitalGains: netCapGains,
+    line6b_isLongTerm: isLongTerm,
     line7_totalIncome: Math.round(totalIncome),
     line11_agi: Math.round(agi),
     line12_deduction: Math.round(deduction),
@@ -701,7 +753,7 @@ You MUST:
 `; 
 
 // ─── Chat system prompt ───────────────────────────────────────────────────────
-const CHAT_SYSTEM = `You are a friendly, patient bilingual tax assistant helping seniors fill out IRS Form 1040. You speak both English and Spanish — respond in the same language the user writes in. 
+const CHAT_SYSTEM = `You are a friendly, patient bilingual tax assistant helping seniors fill out IRS Form 1040-SR-SR. You speak both English and Spanish — respond in the same language the user writes in. 
 
 Rules:
 - Use plain English. No jargon. Explain any tax term you use.
@@ -1058,23 +1110,23 @@ const LINE_EXPLAINERS = {
 // ─── Translations ────────────────────────────────────────────────────────────
 const T = {
   en: {
-    uploadTitle: "📂 Upload Your Tax Documents",
+    uploadTitle: {T[lang].uploadTitle},
     uploadDesc: "Upload your W-2, 1099-R (retirement), SSA-1099 (Social Security), 1099-INT (bank interest), or other tax forms. You can upload multiple files. We accept PDF or photos (JPG, PNG).",
-    uploadBtn: "🔍 Read My Documents with AI",
-    tapHere: "Tap here to choose files",
-    dragDrop: "or drag and drop them here",
-    accepts: "Accepts: PDF, JPG, PNG",
-    noFiles: "No files uploaded yet. Tap above to get started.",
-    docsRead: "✅ Documents Read Successfully",
-    docsDesc: "Here is what we found in your tax documents:",
-    questions: "❓ A Few Quick Questions",
-    questionsDesc: "Please answer these questions so we can fill out your 1040 correctly. Tap your answer.",
-    calculate: "📊 Calculate My 1040",
-    draftSummary: "📋 Your Form 1040 — Draft Summary",
-    draftDesc: "Each line below matches a real line on IRS Form 1040 (2024).",
-    nextSteps: "📌 What to Do Next",
-    printPage: "🖨️ Print This Page",
-    startOver: "🔄 Start Over",
+    uploadBtn: {T[lang].uploadBtn},
+    tapHere: {T[lang].tapHere},
+    dragDrop: {T[lang].dragDrop},
+    accepts: {T[lang].accepts},
+    noFiles: {T[lang].noFiles},
+    docsRead: {T[lang].docsRead},
+    docsDesc: {T[lang].docsDesc},
+    questions: {T[lang].questions},
+    questionsDesc: {T[lang].questionsDesc},
+    calculate: {T[lang].calculate},
+    draftSummary: {T[lang].draftSummary},
+    draftDesc: {T[lang].draftDesc},
+    nextSteps: {T[lang].nextSteps},
+    printPage: {T[lang].printPage},
+    startOver: {T[lang].startOver},
     downloadLetter: "📄 Download Summary Letter",
     findVITA: "📍 Find Free Tax Help Near You",
     disclaimer: "Important: This AI assistant helps you prepare a draft of your 1040. It is not a licensed tax preparer. Always review the results with a tax professional or at a free IRS VITA site before filing.",
@@ -1101,8 +1153,8 @@ const T = {
     questions: "❓ Unas Preguntas Rápidas",
     questionsDesc: "Por favor responda estas preguntas para completar su 1040 correctamente.",
     calculate: "📊 Calcular Mi 1040",
-    draftSummary: "📋 Su Formulario 1040 — Borrador",
-    draftDesc: "Cada línea corresponde a una línea real del Formulario 1040 del IRS (2024).",
+    draftSummary: "📋 Su Formulario 1040-SR — Borrador",
+    draftDesc: "Cada línea corresponde a una línea real del Formulario 1040 del IRS (2025).",
     nextSteps: "📌 Próximos Pasos",
     printPage: "🖨️ Imprimir Esta Página",
     startOver: "🔄 Empezar de Nuevo",
@@ -1165,7 +1217,7 @@ export default function App() {
 
       try {
         const isPDF = file.type === "application/pdf";
-        const model = "gemini-2.5-flash-lite";
+        const model = "gemini-2.0-flash";
 
         let b64, mediaType;
         if (isPDF) {
@@ -1180,7 +1232,7 @@ export default function App() {
 
         const parts = [
           { inline_data: { mime_type: mediaType, data: b64 } },
-          { text: PRIVACY_INSTRUCTION + SYSTEM_PROMPT + "\n\nExtract ONLY the financial amounts. Return only JSON. Never include SSN, account numbers, or personal identifiers." },
+          { text: PRIVACY_INSTRUCTION + SYSTEM_PROMPT + "\n\nThis is an IRS W-2 or tax document. Extract ONLY the financial amounts exactly as shown. Box 1 wages are the most important field. Return only valid JSON. Never include SSN, account numbers, or personal identifiers." },
         ];
 
         const response = await fetch(
@@ -1412,7 +1464,11 @@ export default function App() {
               <div style={styles.sectionDesc}>
                 Please answer these questions so we can fill out your 1040 correctly. Tap your answer.
               </div>
-              {QUESTIONS.map((q) => (
+              {QUESTIONS.filter(q => {
+                  if (q.showIfMarried && answers.married !== 'Married Filing Jointly') return false;
+                  if (q.showIfCapGains && answers.hasCapitalGains !== 'Yes') return false;
+                  return true;
+                }).map((q) => (
                 <div key={q.id} style={styles.qaBlock}>
                   <div style={styles.qaQuestion}>{q.text}</div>
                   {q.hint && <div style={{ fontSize: "15px", color: colors.textMuted, marginBottom: "10px" }}>{q.hint}</div>}
@@ -1489,8 +1545,8 @@ export default function App() {
 
             {/* 1040 Line breakdown */}
             <div style={styles.card}>
-              <div style={styles.sectionTitle}>📋 Your Form 1040 — Draft Summary</div>
-              <div style={styles.sectionDesc}>Each line below matches a real line on IRS Form 1040 (2024).</div>
+              <div style={styles.sectionTitle}>📋 Your Form 1040-SR — Draft Summary</div>
+              <div style={styles.sectionDesc}>Each line below matches a real line on IRS Form 1040-SR (2025).</div>
 
               {[
                 { label: "Wages, salaries, tips", line: "Line 1a", value: result.line1a_wages },
@@ -1500,11 +1556,11 @@ export default function App() {
                 { label: "IRA / pension / annuity distributions", line: "Line 4b", value: result.line4b_retirement },
                 { label: "Social Security benefits (total)", line: "Line 5a", value: result.line5a_ssBenefits },
                 { label: "Taxable Social Security", line: "Line 5b", value: result.line5b_taxableSS },
-                { label: result.line6b_capitalGains >= 0 ? "Capital gains" : "Capital loss (up to $3,000)", line: "Line 6b", value: result.line6b_capitalGains },
+                { label: result.line6b_capitalGains >= 0 ? `Capital gains${result.line6b_capitalGains > 0 && result.line6b_isLongTerm ? " (long-term rate applies)" : ""}` : "Capital loss (up to $3,000 deductible)", line: "Line 6b", value: result.line6b_capitalGains },
                 null,
                 { label: "Total income", line: "Line 7", value: result.line7_totalIncome, bold: true },
                 { label: "Adjusted Gross Income (AGI)", line: "Line 11", value: result.line11_agi, bold: true },
-                { label: result.line12_isItemized ? "Itemized deductions (Schedule A)" : "Standard deduction (includes senior bonus)", line: "Line 12", value: result.line12_deduction },
+                { label: result.line12_isItemized ? "Itemized deductions (Schedule A)" : `Standard deduction 2025${is65OrSpouse65(answers) ? " (senior bonus included)" : ""}`, line: "Line 12", value: result.line12_deduction },
                 result.line12_isItemized ? { label: `  — Medical: ${fmt(result.line12_itemizedBreakdown.deductibleMedical)}  Charity: ${fmt(result.line12_itemizedBreakdown.charitableAmt)}  Mortgage: ${fmt(result.line12_itemizedBreakdown.mortgageAmt)}`, line: "", value: null, note: true } : null,
                 { label: "Taxable income", line: "Line 15", value: result.line15_taxableIncome, bold: true },
                 { label: "Tax on ordinary income", line: "Line 16", value: result.line16_ordinaryTax },
@@ -1691,7 +1747,7 @@ export default function App() {
                 <p style={{ marginBottom: "14px" }}>
                   {lang === "es"
                     ? "Este resumen fue preparado con Form Helper, una herramienta gratuita de IA para personas mayores, creada por Aarthi Nelatoor de Ardrey Kell High School en Charlotte, NC. El contribuyente ha subido sus documentos fiscales para el año fiscal 2024."
-                    : "This summary was prepared using Form Helper, a free AI tax assistant for seniors — built by Aarthi Nelatoor, Ardrey Kell High School, Charlotte NC. The taxpayer uploaded their tax documents for tax year 2024."}
+                    : "This summary was prepared using Form Helper, a free AI tax assistant for seniors — built by Aarthi Nelatoor, Ardrey Kell High School, Charlotte NC. The taxpayer uploaded their tax documents for tax year 2025."}
                 </p>
                 <p style={{ fontWeight: "bold", marginBottom: "8px" }}>{lang === "es" ? "Ingresos encontrados:" : "Income found:"}</p>
                 <ul style={{ paddingLeft: "24px", marginBottom: "14px" }}>
