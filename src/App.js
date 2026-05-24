@@ -221,6 +221,19 @@ const styles = {
 };
 
 // ─── System prompt for Claude ─────────────────────────────────────────────────
+
+// ─── Privacy Instruction ─────────────────────────────────────────────────────
+const PRIVACY_INSTRUCTION = `
+CRITICAL PRIVACY RULE: This document may contain a Social Security Number (SSN).
+You MUST:
+1. NEVER include any SSN, EIN, or tax ID numbers in your JSON response
+2. NEVER include any account numbers or routing numbers
+3. NEVER include any dates of birth
+4. ONLY extract the financial amounts listed in the JSON schema below
+5. If you see a 9-digit number that looks like an SSN, skip it completely
+
+`;
+
 const SYSTEM_PROMPT = `You are a tax document reading assistant. Extract financial data from IRS tax documents.
 
 FOR A W-2 FORM — read these boxes exactly:
@@ -545,130 +558,62 @@ function toBase64(file) {
   });
 }
 
+
+// ─── PDF → Image Converter ───────────────────────────────────────────────────
+async function pdfToImageBase64(file) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      if (!window.pdfjsLib) {
+        await new Promise((res, rej) => {
+          const script = document.createElement("script");
+          script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+          script.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = ""; res(); };
+          script.onerror = rej;
+          document.head.appendChild(script);
+        });
+      }
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer, useWorkerFetch: false, isEvalSupported: false }).promise;
+      console.log("PDF loaded, pages:", pdf.numPages);
+      let extractedText = "";
+      try {
+        const pg = await pdf.getPage(1);
+        const tc = await pg.getTextContent();
+        extractedText = tc.items.map(i => i.str).join(" ");
+        console.log("Text extracted, length:", extractedText.length);
+      } catch(e) { console.warn("Text extraction failed:", e.message); }
+      const page1 = await pdf.getPage(1);
+      const viewport = page1.getViewport({ scale: 1.5 });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page1.render({ canvasContext: ctx, viewport }).promise;
+      const imageBase64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+      console.log("Image rendered:", canvas.width + "x" + canvas.height, "size:", imageBase64.length);
+      resolve({ imageBase64, extractedText, mimeType: "image/jpeg" });
+    } catch (err) {
+      console.error("PDF error:", err);
+      reject(err);
+    }
+  });
+}
+
 // eslint-disable-next-line no-unused-vars
 function isImage(file) {
   return file.type.startsWith("image/");
 }
 
 
-async function pdfToImageBase64(file) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      // Load PDF.js from CDN
-      if (!window.pdfjsLib) {
-        await new Promise((res, rej) => {
-          const script = document.createElement("script");
-          script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-          script.onload = () => {
-            window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-            res();
-          };
-          script.onerror = rej;
-          document.head.appendChild(script);
-        });
-      }
-
-      // Read PDF as ArrayBuffer
-      const arrayBuffer = await file.arrayBuffer();
-
-      // Load with form fields enabled
-      const pdf = await window.pdfjsLib.getDocument({
-        data: arrayBuffer,
-        enableXfa: true,
-        renderInteractiveForms: true,
-      }).promise;
-
-      // Render ALL pages and stitch together for multi-page W-2s
-      const numPages = Math.min(pdf.numPages, 2); // first 2 pages max
-      const canvases = [];
-
-      for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-        const page = await pdf.getPage(pageNum);
-        const viewport = page.getViewport({ scale: 3.0 }); // 3x for clarity
-
-        const canvas = document.createElement("canvas");
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext("2d");
-
-        // White background first
-        ctx.fillStyle = "#FFFFFF";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        await page.render({
-          canvasContext: ctx,
-          viewport,
-          renderInteractiveForms: true,
-          annotationMode: 2, // ENABLE annotations/form fields
-        }).promise;
-
-        canvases.push(canvas);
-      }
-
-      // Use just page 1 (the actual W-2 form with data)
-      const finalCanvas = canvases[0];
-      const dataUrl = finalCanvas.toDataURL("image/png", 1.0);
-      const base64 = dataUrl.split(",")[1];
-      console.log("📄 PDF converted to image, size:", base64.length, "px:", finalCanvas.width + "x" + finalCanvas.height);
-      resolve(base64);
-    } catch (err) {
-      console.error("PDF conversion error:", err);
-      reject(err);
-    }
-  });
-}
-
-// ─── SSN Scrubbing ────────────────────────────────────────────────────────────
-// Converts file to an image on a canvas, blacks out SSN patterns, returns base64
-// SSN pattern: XXX-XX-XXXX or XXXXXXXXX (9 digits)
-// eslint-disable-next-line no-unused-vars
-const SSN_PATTERN = /\b\d{3}-\d{2}-\d{4}\b|\b\d{9}\b/g;
-
-// eslint-disable-next-line no-unused-vars
-async function scrubSSNFromImage(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-      // We cannot do OCR here — so we send a privacy-safe prompt instead
-      URL.revokeObjectURL(url);
-      // Return original base64 but flag that SSN scrubbing prompt is active
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(",")[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
-}
-
-// Builds a privacy-safe prompt that instructs AI to IGNORE and NOT return SSNs
-const PRIVACY_INSTRUCTION = `
-CRITICAL PRIVACY RULE: This document may contain a Social Security Number (SSN).
-You MUST:
-1. NEVER include any SSN, EIN, or tax ID numbers in your JSON response
-2. NEVER include any account numbers or routing numbers
-3. NEVER include any dates of birth
-4. ONLY extract the financial amounts listed in the JSON schema below
-5. If you see a 9-digit number that looks like an SSN, skip it completely
-
-`; 
-
-// ─── Chat system prompt ───────────────────────────────────────────────────────
-
 // ─── Terms of Use Modal ──────────────────────────────────────────────────────
+// eslint-disable-next-line no-unused-vars
 function TermsModal({ lang, onAccept }) {
   return (
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-      background: "rgba(0,0,0,0.7)", zIndex: 9999,
+      background: "rgba(0,0,0,0.75)", zIndex: 9999,
       display: "flex", alignItems: "center", justifyContent: "center",
       padding: "16px",
     }}>
@@ -677,7 +622,6 @@ function TermsModal({ lang, onAccept }) {
         maxHeight: "90vh", overflowY: "auto",
         boxShadow: "0 8px 40px rgba(0,0,0,0.3)",
       }}>
-        {/* Header */}
         <div style={{ background: colors.primary, borderRadius: "20px 20px 0 0", padding: "24px", textAlign: "center" }}>
           <div style={{ fontSize: "36px", marginBottom: "8px" }}>📋</div>
           <div style={{ color: "#fff", fontSize: "22px", fontWeight: "bold" }}>Form Helper</div>
@@ -685,83 +629,36 @@ function TermsModal({ lang, onAccept }) {
             {lang === "es" ? "Términos de Uso y Aviso de Privacidad" : "Terms of Use & Privacy Notice"}
           </div>
         </div>
-
-        {/* Body */}
         <div style={{ padding: "24px" }}>
-          <div style={{ background: colors.warningLight, border: `1px solid #F9CA3E`, borderRadius: "10px", padding: "14px 16px", marginBottom: "20px", fontSize: "15px", color: "#7D6608", lineHeight: "1.6" }}>
+          <div style={{ background: colors.warningLight, border: "1px solid #F9CA3E", borderRadius: "10px", padding: "14px 16px", marginBottom: "20px", fontSize: "15px", color: "#7D6608", lineHeight: "1.6" }}>
             ⚠️ <strong>{lang === "es" ? "Importante:" : "Important:"}</strong>{" "}
             {lang === "es"
               ? "Form Helper es una herramienta educativa gratuita. NO es un preparador de impuestos con licencia. Todos los resultados son estimaciones y DEBEN ser revisados por un profesional antes de presentar."
               : "Form Helper is a free educational tool. It is NOT a licensed tax preparer. All results are estimates and MUST be reviewed by a professional before filing."}
           </div>
-
           {[
-            {
-              icon: "📄",
-              title: lang === "es" ? "No es asesoramiento fiscal profesional" : "Not professional tax advice",
-              desc: lang === "es"
-                ? "Form Helper produce borradores de orientación solamente. No proporciona asesoramiento fiscal legal. Siempre verifique los resultados con un CPA, agente inscrito, o sitio VITA gratuito del IRS antes de presentar su declaración."
-                : "Form Helper produces draft guidance only. It does not provide legal tax advice. Always verify results with a CPA, enrolled agent, or free IRS VITA site before filing your return."
-            },
-            {
-              icon: "🔒",
-              title: lang === "es" ? "Sus documentos no se almacenan" : "Your documents are not stored",
-              desc: lang === "es"
-                ? "Los documentos que sube se procesan en su navegador y se envían a Google Gemini AI para leerlos. Este sitio web no almacena ningún documento, número de Seguro Social, ni información personal. Cerrar el navegador borra todo."
-                : "Documents you upload are processed in your browser and sent to Google Gemini AI to be read. This website stores no documents, Social Security Numbers, or personal information. Closing your browser erases everything."
-            },
-            {
-              icon: "🤖",
-              title: lang === "es" ? "Procesamiento de IA por Google" : "AI processing by Google",
-              desc: lang === "es"
-                ? "Esta aplicación usa la API de Google Gemini. En el nivel gratuito, Google puede usar los datos para mejorar sus modelos. Solo los montos en dólares se devuelven a la aplicación — nunca números de Seguro Social ni números de cuenta."
-                : "This app uses the Google Gemini API. On the free tier, Google may use inputs to improve their models. Only dollar amounts are returned to the app — never Social Security Numbers or account numbers."
-            },
-            {
-              icon: "⚖️",
-              title: lang === "es" ? "Limitación de responsabilidad" : "Limitation of liability",
-              desc: lang === "es"
-                ? "Form Helper se proporciona 'tal cual' sin garantías. Aarthi Nelatoor y Ardrey Kell High School no son responsables de errores en los resultados. Al usar esta aplicación, usted acepta que es responsable de verificar todos los números antes de presentar."
-                : "Form Helper is provided 'as is' without warranties. Aarthi Nelatoor and Ardrey Kell High School are not liable for errors in results. By using this app you agree you are responsible for verifying all figures before filing."
-            },
-            {
-              icon: "🎓",
-              title: lang === "es" ? "Proyecto estudiantil" : "Student project",
-              desc: lang === "es"
-                ? "Form Helper fue creado por una estudiante de secundaria como proyecto educativo. No está afiliado al IRS, ni a ningún preparador de impuestos con licencia, ni a ninguna institución financiera."
-                : "Form Helper was created by a high school student as an educational project. It is not affiliated with the IRS, any licensed tax preparer, or any financial institution."
-            },
+            { icon: "📄", title: lang === "es" ? "No es asesoramiento fiscal profesional" : "Not professional tax advice", desc: lang === "es" ? "Form Helper produce borradores de orientación solamente. Siempre verifique los resultados con un CPA o sitio VITA gratuito del IRS antes de presentar su declaración." : "Form Helper produces draft guidance only. Always verify results with a CPA or free IRS VITA site before filing your return." },
+            { icon: "🔒", title: lang === "es" ? "Sus documentos no se almacenan" : "Your documents are not stored", desc: lang === "es" ? "Los documentos se procesan en su navegador y se envían a Google Gemini AI. Este sitio no almacena ningún documento ni información personal." : "Documents are processed in your browser and sent to Google Gemini AI. This site stores no documents or personal information." },
+            { icon: "🤖", title: lang === "es" ? "Procesamiento de IA por Google" : "AI processing by Google", desc: lang === "es" ? "Esta aplicación usa la API de Google Gemini. En el nivel gratuito, Google puede usar los datos para mejorar sus modelos." : "This app uses the Google Gemini API. On the free tier, Google may use inputs to improve their models." },
+            { icon: "⚖️", title: lang === "es" ? "Limitación de responsabilidad" : "Limitation of liability", desc: lang === "es" ? "Form Helper se proporciona sin garantías. Aarthi Nelatoor no es responsable de errores en los resultados." : "Form Helper is provided without warranties. Aarthi Nelatoor is not liable for errors in results." },
+            { icon: "🎓", title: lang === "es" ? "Proyecto estudiantil" : "Student project", desc: lang === "es" ? "Form Helper fue creado por una estudiante de secundaria como proyecto educativo. No está afiliado al IRS ni a ningún preparador de impuestos con licencia." : "Form Helper was created by a high school student as an educational project. It is not affiliated with the IRS or any licensed tax preparer." },
           ].map((item, i, arr) => (
-            <div key={i} style={{ display: "flex", gap: "14px", padding: "14px 0", borderBottom: i < arr.length - 1 ? `1px solid ${colors.border}` : "none" }}>
+            <div key={i} style={{ display: "flex", gap: "14px", padding: "14px 0", borderBottom: i < arr.length - 1 ? "1px solid " + colors.border : "none" }}>
               <span style={{ fontSize: "22px", flexShrink: 0 }}>{item.icon}</span>
               <div>
-                <div style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "4px", color: colors.text }}>{item.title}</div>
+                <div style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "4px" }}>{item.title}</div>
                 <div style={{ fontSize: "13px", color: colors.textMuted, lineHeight: "1.6" }}>{item.desc}</div>
               </div>
             </div>
           ))}
-
           <div style={{ marginTop: "20px", fontSize: "13px", color: colors.textMuted, textAlign: "center", marginBottom: "16px" }}>
-            {lang === "es"
-              ? "Al tocar 'Acepto', confirma que ha leído y acepta estos términos."
-              : "By tapping 'I Agree', you confirm you have read and accept these terms."}
+            {lang === "es" ? "Al tocar 'Acepto', confirma que ha leído y acepta estos términos." : "By tapping 'I Agree', you confirm you have read and accept these terms."}
           </div>
-
-          <button
-            onClick={onAccept}
-            style={{
-              width: "100%", padding: "18px", fontSize: "20px", fontWeight: "bold",
-              background: colors.primary, color: "#fff", border: "none",
-              borderRadius: "12px", cursor: "pointer",
-            }}
-          >
+          <button onClick={onAccept} style={{ width: "100%", padding: "18px", fontSize: "20px", fontWeight: "bold", background: colors.primary, color: "#fff", border: "none", borderRadius: "12px", cursor: "pointer" }}>
             {lang === "es" ? "✅ Acepto — Comenzar" : "✅ I Agree — Get Started"}
           </button>
-
           <div style={{ textAlign: "center", marginTop: "12px", fontSize: "12px", color: colors.textMuted }}>
-            {lang === "es"
-              ? "Form Helper es gratuito para siempre. Sin registro. Sin almacenamiento de datos."
-              : "Form Helper is free forever. No sign-up. No data storage."}
+            {lang === "es" ? "Form Helper es gratuito para siempre. Sin registro. Sin almacenamiento de datos." : "Form Helper is free forever. No sign-up. No data storage."}
           </div>
         </div>
       </div>
