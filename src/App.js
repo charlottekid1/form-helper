@@ -550,6 +550,7 @@ function isImage(file) {
   return file.type.startsWith("image/");
 }
 
+
 async function pdfToImageBase64(file) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -959,7 +960,7 @@ export default function App() {
 
       try {
         const isPDF = file.type === "application/pdf";
-        const model = "gemini-2.5-flash-lite-preview-06-17";
+        const model = "gemini-2.5-flash-lite";
 
         let parts;
         if (isPDF) {
