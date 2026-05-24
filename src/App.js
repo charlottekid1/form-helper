@@ -993,9 +993,16 @@ export default function App() {
         );
 
         const data = await response.json();
-        console.log("🔍 Full Gemini API response:", JSON.stringify(data).slice(0, 500));
+        console.log("🔍 Full Gemini API response:", JSON.stringify(data).slice(0, 1000));
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-        console.log("🔍 Gemini raw response for", file.name, ":", text); // debug
+        console.log("🔍 Gemini raw response for", file.name, ":", text);
+        if (data.error) {
+          console.error("❌ Gemini API error:", data.error.message);
+        }
+        if (!text || text === "{}") {
+          console.warn("⚠️ Empty response — PDF may not have rendered correctly");
+          console.log("📐 Check if PDF.js loaded correctly");
+        }
         const clean = text.replace(/```json|```/g, "").trim();
         let parsed;
         try {
