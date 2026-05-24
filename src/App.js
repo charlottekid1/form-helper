@@ -1174,6 +1174,40 @@ export default function App() {
                 </div>
               ))}
 
+                            {/* Spouse document upload */}
+              {answers.married === "Married Filing Jointly" && answers.spouseIncome === "Yes — I will upload their documents" && (
+                <div style={{ background: "#FDEBD0", border: "1px solid #F0C48A", borderRadius: "12px", padding: "20px", marginBottom: "16px" }}>
+                  <div style={{ fontSize: "17px", fontWeight: "bold", color: "#E67E22", marginBottom: "10px" }}>
+                    📂 {lang === "es" ? "Suba los documentos de su cónyuge" : "Upload Your Spouse's Documents"}
+                  </div>
+                  <div style={{ fontSize: "15px", color: "#555", marginBottom: "14px", lineHeight: "1.6" }}>
+                    {lang === "es"
+                      ? "Por favor suba el W-2, 1099-R, SSA-1099 u otros documentos de su cónyuge."
+                      : "Please upload your spouse's W-2, 1099-R, SSA-1099, or other tax documents."}
+                  </div>
+                  <button
+                    style={{ padding: "12px 24px", fontSize: "16px", fontWeight: "bold", background: "#E67E22", color: "#fff", border: "none", borderRadius: "10px", cursor: "pointer" }}
+                    onClick={() => document.getElementById("spouseFileInput").click()}
+                  >
+                    📤 {lang === "es" ? "Subir Documentos del Cónyuge" : "Upload Spouse Documents"}
+                  </button>
+                  <input
+                    id="spouseFileInput"
+                    type="file"
+                    accept=".pdf,image/*"
+                    multiple
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const newFiles = Array.from(e.target.files);
+                      setFiles(prev => [...prev, ...newFiles]);
+                      alert(lang === "es"
+                        ? newFiles.length + " documento(s) del conyuge agregado(s). Haga clic en Calcular cuando este listo."
+                        : newFiles.length + " spouse document(s) added. Click Calculate when ready."
+                      );
+                    }}
+                  />
+                </div>
+              )}
               <button
                 style={{
                   ...styles.btn,
@@ -1185,7 +1219,7 @@ export default function App() {
                 disabled={!allAnswered()}
                 onClick={computeResults}
               >
-                📊 Calculate My 1040
+                📊 Calculate My 1040-SR
               </button>
             </div>
           </div>
