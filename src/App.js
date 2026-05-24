@@ -962,7 +962,7 @@ export default function App() {
 
       try {
         const isPDF = file.type === "application/pdf";
-        const model = "gemini-2.0-flash";
+        const model = "gemini-1.5-flash-latest";
 
         let b64, mediaType;
         if (isPDF) {
