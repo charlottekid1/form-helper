@@ -571,6 +571,63 @@ async function pdfToImageBase64(file) {
         });
       }
 
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+      // Extract text from all pages
+      let fullText = "";
+      for (let p = 1; p <= Math.min(pdf.numPages, 3); p++) {
+        const page = await pdf.getPage(p);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(" ");
+        fullText += pageText + "
+";
+      }
+      console.log("📄 Extracted PDF text:", fullText.slice(0, 500));
+
+      // Also render page 1 as image at high resolution
+      const page1 = await pdf.getPage(1);
+      const viewport = page1.getViewport({ scale: 3.0 });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page1.render({
+        canvasContext: ctx,
+        viewport,
+        annotationMode: 2,
+      }).promise;
+
+      const imageBase64 = canvas.toDataURL("image/png", 1.0).split(",")[1];
+      console.log("📐 Image size:", canvas.width + "x" + canvas.height, "b64 length:", imageBase64.length);
+
+      // Return both image and text combined
+      resolve({ imageBase64, extractedText: fullText });
+    } catch (err) {
+      console.error("PDF conversion error:", err);
+      reject(err);
+    }
+  });
+}on pdfToImageBase64(file) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Load PDF.js from CDN
+      if (!window.pdfjsLib) {
+        await new Promise((res, rej) => {
+          const script = document.createElement("script");
+          script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+          script.onload = () => {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+            res();
+          };
+          script.onerror = rej;
+          document.head.appendChild(script);
+        });
+      }
+
       // Read PDF as ArrayBuffer
       const arrayBuffer = await file.arrayBuffer();
 
@@ -962,23 +1019,41 @@ export default function App() {
 
       try {
         const isPDF = file.type === "application/pdf";
-        const model = "gemini-1.5-flash-latest";
+        const model = "gemini-2.5-flash-lite-preview-06-17";
 
-        let b64, mediaType;
+        let parts;
         if (isPDF) {
-          // Convert PDF to PNG image so Gemini can read it reliably
-          setProcessingMsg(`🖼️ Converting PDF to image for document ${i + 1} of ${files.length}…`);
-          b64 = await pdfToImageBase64(file);
-          mediaType = "image/png";
-        } else {
-          b64 = await toBase64(file);
-          mediaType = file.type;
-        }
+          setProcessingMsg(`📄 Reading PDF for document ${i + 1} of ${files.length}…`);
+          // Extract text directly from PDF — most reliable approach
+          const pdfResult = await pdfToImageBase64(file);
+          const { imageBase64, extractedText } = pdfResult;
 
-        const parts = [
-          { inline_data: { mime_type: mediaType, data: b64 } },
-          { text: PRIVACY_INSTRUCTION + SYSTEM_PROMPT + "\n\nThis is an IRS W-2 or tax document. Extract ONLY the financial amounts exactly as shown. Box 1 wages are the most important field. Return only valid JSON. Never include SSN, account numbers, or personal identifiers." },
-        ];
+          if (extractedText && extractedText.trim().length > 50) {
+            // Text extraction worked — send as text prompt (most reliable)
+            console.log("📤 Sending PDF as TEXT to Gemini:", extractedText.slice(0, 400));
+            parts = [
+              {
+                text: PRIVACY_INSTRUCTION + SYSTEM_PROMPT +
+                `\n\nHere is the complete text content extracted from the tax document:\n\n${extractedText}\n\n` +
+                `Instructions: Read the above text carefully. Find dollar amounts next to box labels like "1 Wages", "2 Federal income tax withheld", etc. ` +
+                `Return ONLY valid JSON. Never include SSN or account numbers.`
+              }
+            ];
+          } else {
+            // Fallback to image if text extraction failed
+            console.log("📤 Text extraction failed, sending image to Gemini");
+            parts = [
+              { inline_data: { mime_type: "image/png", data: imageBase64 } },
+              { text: PRIVACY_INSTRUCTION + SYSTEM_PROMPT + "\n\nReturn only JSON. Never include SSN or account numbers." },
+            ];
+          }
+        } else {
+          const b64 = await toBase64(file);
+          parts = [
+            { inline_data: { mime_type: file.type, data: b64 } },
+            { text: PRIVACY_INSTRUCTION + SYSTEM_PROMPT + "\n\nExtract ONLY the financial amounts. Return only JSON. Never include SSN or account numbers." },
+          ];
+        }
 
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.REACT_APP_GEMINI_KEY}`,
