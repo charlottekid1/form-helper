@@ -550,66 +550,7 @@ function isImage(file) {
   return file.type.startsWith("image/");
 }
 
-// ─── PDF → Image Converter (using PDF.js) ───────────────────────────────────
-// Converts first page of a PDF to a PNG base64 string in the browser
-// This lets Gemini read PDFs reliably on the free tier
 async function pdfToImageBase64(file) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      // Load PDF.js from CDN
-      if (!window.pdfjsLib) {
-        await new Promise((res, rej) => {
-          const script = document.createElement("script");
-          script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-          script.onload = () => {
-            window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-            res();
-          };
-          script.onerror = rej;
-          document.head.appendChild(script);
-        });
-      }
-
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-
-      // Extract text from all pages
-      let fullText = "";
-      for (let p = 1; p <= Math.min(pdf.numPages, 3); p++) {
-        const page = await pdf.getPage(p);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map(item => item.str).join(" ");
-        fullText += pageText + "\n";
-      }
-      console.log("📄 Extracted PDF text:", fullText.slice(0, 500));
-
-      // Also render page 1 as image at high resolution
-      const page1 = await pdf.getPage(1);
-      const viewport = page1.getViewport({ scale: 3.0 });
-      const canvas = document.createElement("canvas");
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#FFFFFF";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      await page1.render({
-        canvasContext: ctx,
-        viewport,
-        annotationMode: 2,
-      }).promise;
-
-      const imageBase64 = canvas.toDataURL("image/png", 1.0).split(",")[1];
-      console.log("📐 Image size:", canvas.width + "x" + canvas.height, "b64 length:", imageBase64.length);
-
-      // Return both image and text combined
-      resolve({ imageBase64, extractedText: fullText });
-    } catch (err) {
-      console.error("PDF conversion error:", err);
-      reject(err);
-    }
-  });
-}on pdfToImageBase64(file) {
   return new Promise(async (resolve, reject) => {
     try {
       // Load PDF.js from CDN
