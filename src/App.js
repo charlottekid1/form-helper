@@ -580,8 +580,7 @@ async function pdfToImageBase64(file) {
         const page = await pdf.getPage(p);
         const textContent = await page.getTextContent();
         const pageText = textContent.items.map(item => item.str).join(" ");
-        fullText += pageText + "
-";
+        fullText += pageText + "\n";
       }
       console.log("📄 Extracted PDF text:", fullText.slice(0, 500));
 
