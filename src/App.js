@@ -19,7 +19,7 @@
 // ║  NEVER share your .env file or API key publicly                 ║
 // ╚══════════════════════════════════════════════════════════════════╝
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 
 // Capture API key at build time
 const GEMINI_API_KEY = process.env.REACT_APP_GEMINI_KEY || "";
@@ -842,8 +842,11 @@ export default function App() {
   const [files, setFiles] = useState([]);
   const [hovering, setHovering] = useState(false);
   const [extractedData, setExtractedData] = useState([]);
+  const extractedDataRef = useRef([]);
   const [answers, setAnswers] = useState({});
   const [manualInputs, setManualInputs] = useState({});
+  // Keep ref in sync with state for use in async callbacks
+  useEffect(() => { extractedDataRef.current = extractedData; }, [extractedData]);
   const [result, setResult] = useState(null);
   const [processingMsg, setProcessingMsg] = useState("Reading your documents…");
 
@@ -972,7 +975,10 @@ export default function App() {
   }
 
   function computeResults() {
-    const r = compute1040(extractedData, answers, manualInputs);
+    // Use ref to get latest extractedData (fixes React closure issue with spouse docs)
+    const allData = extractedDataRef.current.length > 0 ? extractedDataRef.current : extractedData;
+    console.log("Computing with", allData.length, "documents:", allData.map(d => d.fileName));
+    const r = compute1040(allData, answers, manualInputs);
     setResult(r);
     setStep(3);
   }
@@ -1264,7 +1270,12 @@ export default function App() {
                       }
                       
                       // Add spouse results to extracted data
-                      setExtractedData(prev => [...prev, ...spouseResults]);
+                      setExtractedData(prev => {
+                        const updated = [...prev, ...spouseResults];
+                        extractedDataRef.current = updated;
+                        console.log("Spouse docs added, total docs:", updated.length);
+                        return updated;
+                      });
                       setFiles(prev => [...prev, ...newFiles]);
                       
                       alert(lang === "es"
