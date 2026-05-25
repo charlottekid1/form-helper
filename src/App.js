@@ -446,14 +446,30 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   const mortgageAmt = parseFloat(manualInputs.mortgageAmt) || 0;
   const estimatedPayments = parseFloat(manualInputs.estimatedTaxAmt) || 0;
 
-  // Standard deduction 2025 (IRS Rev. Proc. 2024-40)
-  let stdDeduction = isMarried ? 30000 : 15000;
+  // Standard deduction 2025 — updated per One Big Beautiful Bill Act
+  // Base: $31,500 MFJ, $15,750 Single
+  let stdDeduction = isMarried ? 31500 : 15750;
   const extraPerCondition = isMarried ? 1600 : 2000; // Age 65+ or blind bonus
   if (is65) stdDeduction += extraPerCondition;
   if (isBlind) stdDeduction += extraPerCondition;
   // Spouse bonuses (married filing jointly only)
   if (isMarried && answers.spouseAge65 === "Yes") stdDeduction += 1600;
   if (isMarried && answers.spouseBlind === "Yes") stdDeduction += 1600;
+
+  // NEW 2025-2028: Enhanced Senior Deduction (One Big Beautiful Bill Act)
+  // $6,000 per qualifying senior (age 65+), phases out above $75,000 single / $150,000 MFJ
+  let enhancedSeniorDeduction = 0;
+  if (is65) enhancedSeniorDeduction += 6000;
+  if (isMarried && answers.spouseAge65 === "Yes") enhancedSeniorDeduction += 6000;
+  // Phase out: 6% reduction per dollar over threshold
+  const phaseOutThreshold = isMarried ? 150000 : 75000;
+  const provisionalAGI = data.wages + data.retirementDistribution + data.interestIncome + data.dividendIncome;
+  if (provisionalAGI > phaseOutThreshold) {
+    const excess = provisionalAGI - phaseOutThreshold;
+    const reduction = Math.min(enhancedSeniorDeduction, Math.round(excess * 0.06));
+    enhancedSeniorDeduction = Math.max(0, enhancedSeniorDeduction - reduction);
+  }
+  stdDeduction += enhancedSeniorDeduction;
 
   // SS taxability (up to 85% taxable based on provisional income)
   const capitalGainsForSS = Math.max(0, data.capitalGainsNet);
@@ -533,6 +549,7 @@ function compute1040(extractedData, answers, manualInputs = {}) {
     line7_totalIncome: Math.round(totalIncome),
     line11_agi: Math.round(agi),
     line12_deduction: Math.round(deduction),
+    line12_enhancedSenior: enhancedSeniorDeduction,
     line12_isItemized: useItemized,
     line12_itemizedBreakdown: { deductibleMedical: Math.round(deductibleMedical), charitableAmt, mortgageAmt, total: Math.round(itemizedTotal), stdForComparison: stdDeduction },
     line15_taxableIncome: Math.round(taxableIncome),
@@ -1314,7 +1331,8 @@ export default function App() {
                 null,
                 { label: "Total income", line: "Line 7", value: result.line7_totalIncome, bold: true },
                 { label: "Adjusted Gross Income (AGI)", line: "Line 11", value: result.line11_agi, bold: true },
-                { label: result.line12_isItemized ? "Itemized deductions (Schedule A)" : `Standard deduction 2025${is65OrSpouse65(answers) ? " (senior bonus included)" : ""}`, line: "Line 12", value: result.line12_deduction },
+                { label: result.line12_isItemized ? "Itemized deductions (Schedule A)" : `Standard deduction 2025${is65OrSpouse65(answers) ? " (includes age 65+ bonus)" : ""}`, line: "Line 12", value: result.line12_deduction },
+                result.line12_enhancedSenior > 0 ? { label: `  ↳ Includes new 2025 Enhanced Senior Deduction (OBBBA): ${fmt(result.line12_enhancedSenior)}`, line: "", value: null, note: true } : null,
                 result.line12_isItemized ? { label: `  — Medical: ${fmt(result.line12_itemizedBreakdown.deductibleMedical)}  Charity: ${fmt(result.line12_itemizedBreakdown.charitableAmt)}  Mortgage: ${fmt(result.line12_itemizedBreakdown.mortgageAmt)}`, line: "", value: null, note: true } : null,
                 { label: "Taxable income", line: "Line 15", value: result.line15_taxableIncome, bold: true },
                 { label: "Tax on ordinary income", line: "Line 16", value: result.line16_ordinaryTax },
