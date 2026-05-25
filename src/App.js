@@ -21,6 +21,9 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 
+// Capture API key at build time
+const GEMINI_API_KEY = GEMINI_API_KEY || "";
+
 // ─── Design tokens ───────────────────────────────────────────────────────────
 const colors = {
   bg: "#F7F5F0",
@@ -894,7 +897,7 @@ export default function App() {
         }
 
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.REACT_APP_GEMINI_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1197,12 +1200,59 @@ export default function App() {
                     accept=".pdf,image/*"
                     multiple
                     style={{ display: "none" }}
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const newFiles = Array.from(e.target.files);
+                      if (newFiles.length === 0) return;
+                      
+                      // Process spouse documents through AI immediately
+                      setProcessingMsg(lang === "es" 
+                        ? "Leyendo documentos del cónyuge..." 
+                        : "Reading spouse documents...");
+                      
+                      const spouseResults = [];
+                      for (let i = 0; i < newFiles.length; i++) {
+                        const file = newFiles[i];
+                        setProcessingMsg(lang === "es"
+                          ? `Leyendo documento del cónyuge ${i+1} de ${newFiles.length}...`
+                          : `Reading spouse document ${i+1} of ${newFiles.length}...`);
+                        try {
+                          const isPDF = file.type === "application/pdf";
+                          let parts;
+                          if (isPDF) {
+                            const pdfResult = await pdfToImageBase64(file);
+                            const { imageBase64, extractedText, mimeType } = pdfResult;
+                            const textHint = extractedText && extractedText.trim().length > 50
+                              ? `\n\nRAW TEXT FROM SPOUSE DOCUMENT:\n${extractedText}\n\nExtract financial amounts.`
+                              : "";
+                            parts = extractedText && extractedText.trim().length > 50
+                              ? [{ text: PRIVACY_INSTRUCTION + SYSTEM_PROMPT + textHint + " Return only JSON." }]
+                              : [{ inline_data: { mime_type: mimeType || "image/jpeg", data: imageBase64 } }, { text: PRIVACY_INSTRUCTION + SYSTEM_PROMPT + "\n\nReturn only JSON." }];
+                          } else {
+                            const b64 = await toBase64(file);
+                            parts = [{ inline_data: { mime_type: file.type, data: b64 } }, { text: PRIVACY_INSTRUCTION + SYSTEM_PROMPT + "\n\nReturn only JSON." }];
+                          }
+                          const response = await fetch(
+                            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`,
+                            { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { temperature: 0.1, maxOutputTokens: 1000 } }) }
+                          );
+                          const data = await response.json();
+                          const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+                          const clean = text.replace(/```json|```/g, "").trim();
+                          let parsed;
+                          try { parsed = JSON.parse(clean); } catch { parsed = { documentType: "Error", notes: "Could not parse" }; }
+                          spouseResults.push({ fileName: file.name + " (Spouse)", ...parsed });
+                        } catch(err) {
+                          spouseResults.push({ fileName: file.name + " (Spouse)", documentType: "Error", notes: err.message });
+                        }
+                      }
+                      
+                      // Add spouse results to extracted data
+                      setExtractedData(prev => [...prev, ...spouseResults]);
                       setFiles(prev => [...prev, ...newFiles]);
+                      
                       alert(lang === "es"
-                        ? newFiles.length + " documento(s) del conyuge agregado(s). Haga clic en Calcular cuando este listo."
-                        : newFiles.length + " spouse document(s) added. Click Calculate when ready."
+                        ? `${newFiles.length} documento(s) del cónyuge procesado(s) exitosamente. Los ingresos han sido agregados.`
+                        : `${newFiles.length} spouse document(s) processed successfully. Income has been added.`
                       );
                     }}
                   />
