@@ -22,7 +22,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 
 // Capture API key at build time
-const GEMINI_API_KEY = GEMINI_API_KEY || "";
+const GEMINI_API_KEY = process.env.REACT_APP_GEMINI_KEY || "";
 
 // ─── Design tokens ───────────────────────────────────────────────────────────
 const colors = {
