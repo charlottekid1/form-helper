@@ -322,7 +322,7 @@ const QUESTIONS = [
   },
   {
     id: "medicalExpenses",
-    text: "Did you have large medical or dental expenses this year?",
+    text: "Did you or your spouse have large medical or dental expenses this year?",
     hint: "Medical expenses over 7.5% of your income may be deductible if you itemize.",
     options: ["Yes, over $5,000", "Yes, under $5,000", "No"],
     inputId: "medicalExpensesAmt",
@@ -331,7 +331,7 @@ const QUESTIONS = [
   },
   {
     id: "charitableDonations",
-    text: "Did you make any donations to churches, charities, or nonprofits?",
+    text: "Did you or your spouse make any donations to churches, charities, or nonprofits?",
     hint: "Cash and non-cash donations to qualified organizations can be deducted if you itemize.",
     options: ["Yes", "No"],
     inputId: "charitableAmt",
@@ -340,7 +340,7 @@ const QUESTIONS = [
   },
   {
     id: "mortgageInterest",
-    text: "Did you pay mortgage interest on your home?",
+    text: "Did you or your spouse pay mortgage interest on your home?",
     hint: "Mortgage interest is deductible on Schedule A if you itemize.",
     options: ["Yes", "No"],
     inputId: "mortgageAmt",
@@ -370,7 +370,7 @@ const QUESTIONS = [
   },
   {
     id: "estimatedTaxPayments",
-    text: "Did you make quarterly estimated tax payments to the IRS this year?",
+    text: "Did you or your spouse make quarterly estimated tax payments to the IRS this year?",
     hint: "Many retired seniors pay taxes quarterly instead of having them withheld.",
     options: ["Yes", "No", "Not sure"],
     inputId: "estimatedTaxAmt",
@@ -379,8 +379,8 @@ const QUESTIONS = [
   },
   {
     id: "hasCapitalGains",
-    text: "Did you sell any stocks, bonds, mutual funds, or property this year?",
-    hint: "If yes, you should have received a 1099-B from your broker. Capital gains are taxed at special lower rates for seniors.",
+    text: "Did you or your spouse sell any stocks, bonds, mutual funds, or property this year?",
+    hint: "If yes, you should have received a 1099-B from your broker. Capital gains are taxed at special lower rates for seniors. This includes both spouses if filing jointly.",
     options: ["Yes", "No", "Not sure"],
   },
   {
@@ -848,6 +848,7 @@ export default function App() {
   // Keep ref in sync with state for use in async callbacks
   useEffect(() => { extractedDataRef.current = extractedData; }, [extractedData]);
   const [result, setResult] = useState(null);
+  const [quotaError, setQuotaError] = useState(false);
   const [processingMsg, setProcessingMsg] = useState("Reading your documents…");
 
   // Drag & drop
@@ -945,7 +946,19 @@ export default function App() {
           parsed = JSON.parse(clean);
         } catch (parseErr) {
           console.error("JSON parse error:", parseErr, "Raw text:", text);
-          parsed = { documentType: "Parse Error", notes: "AI returned unexpected format. Try uploading a clearer image." };
+          parsed = { documentType: "Parse Error", notes: `AI returned unexpected format. Raw: ${text.slice(0, 100)}` };
+        }
+        // Check for API errors
+        if (data.error) {
+          const isQuota = data.error.code === 429 || data.error.message.includes("quota") || data.error.message.includes("Quota");
+          const is404 = data.error.code === 404;
+          if (isQuota) setQuotaError(true);
+          const friendlyMsg = isQuota
+            ? "Our document reader is temporarily busy. Please try again in a few minutes or contact us for help."
+            : is404
+            ? "Document reader is being updated. Please try again shortly."
+            : `Unable to read document. Please try again or upload a clearer image. (${data.error.code})`;
+          parsed = { documentType: "⚠️ Could Not Read", notes: friendlyMsg };
         }
         // Validate wages field specifically
         if (parsed.wages === undefined || parsed.wages === null) parsed.wages = 0;
@@ -1033,6 +1046,29 @@ export default function App() {
         <div style={styles.disclaimer}>
           ⚠️ {T[lang].disclaimer}
         </div>
+
+        {/* Quota error banner */}
+        {quotaError && (
+          <div style={{ background: "#FADBD8", border: "1px solid #F1948A", borderRadius: "12px", padding: "16px 20px", marginBottom: "20px", display: "flex", alignItems: "flex-start", gap: "12px" }}>
+            <span style={{ fontSize: "24px", flexShrink: 0 }}>⏳</span>
+            <div>
+              <div style={{ fontWeight: "bold", fontSize: "16px", color: "#C0392B", marginBottom: "4px" }}>
+                {lang === "es" ? "Lector de documentos temporalmente ocupado" : "Document Reader Temporarily Busy"}
+              </div>
+              <div style={{ fontSize: "15px", color: "#7B241C", lineHeight: "1.6" }}>
+                {lang === "es"
+                  ? "Nuestro lector de IA está temporalmente ocupado. Por favor intente de nuevo en unos minutos. Si el problema persiste, contacte a Aarthi para ayuda."
+                  : "Our AI document reader is temporarily busy due to high demand. Please try again in a few minutes. If the problem persists, contact us for help."}
+              </div>
+              <button
+                onClick={() => { setQuotaError(false); setStep(0); setFiles([]); setExtractedData([]); }}
+                style={{ marginTop: "10px", padding: "8px 16px", background: "#C0392B", color: "#fff", border: "none", borderRadius: "8px", fontSize: "14px", cursor: "pointer", fontWeight: "bold" }}
+              >
+                {lang === "es" ? "🔄 Intentar de Nuevo" : "🔄 Try Again"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* STEP 0: Upload */}
         {step === 0 && (
