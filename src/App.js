@@ -1295,12 +1295,22 @@ export default function App() {
                             { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { temperature: 0.1, maxOutputTokens: 1000 } }) }
                           );
                           const data = await response.json();
+                          console.log("🔍 Spouse doc response:", JSON.stringify(data).slice(0, 300));
                           const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
                           const clean = text.replace(/```json|```/g, "").trim();
                           let parsed;
-                          try { parsed = JSON.parse(clean); } catch { parsed = { documentType: "Error", notes: "Could not parse" }; }
+                          try { parsed = JSON.parse(clean); } catch { parsed = { documentType: "Error", notes: "Could not parse response" }; }
+                          // Check for API errors
+                          if (data.error) {
+                            const isQuota = data.error.code === 429 || data.error.message.includes("quota");
+                            if (isQuota) setQuotaError(true);
+                            parsed = { documentType: "⚠️ Could Not Read", notes: isQuota
+                              ? "Our document reader is temporarily busy. Please try again in a few minutes."
+                              : `Error ${data.error.code}: ${data.error.message.slice(0, 100)}` };
+                          }
                           spouseResults.push({ fileName: file.name + " (Spouse)", ...parsed });
                         } catch(err) {
+                          console.error("Spouse doc error:", err);
                           spouseResults.push({ fileName: file.name + " (Spouse)", documentType: "Error", notes: err.message });
                         }
                       }
