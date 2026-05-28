@@ -341,10 +341,55 @@ const QUESTIONS = [
   {
     id: "mortgageInterest",
     text: "Did you or your spouse pay mortgage interest on your home?",
-    hint: "Mortgage interest is deductible on Schedule A if you itemize.",
+    hint: "Mortgage interest is deductible on Schedule A if you itemize. Check your 1098 form from your lender.",
     options: ["Yes", "No"],
     inputId: "mortgageAmt",
-    inputLabel: "Total mortgage interest paid ($)",
+    inputLabel: "Total mortgage interest paid — from Form 1098 ($)",
+    showInputIf: "Yes",
+  },
+  {
+    id: "propertyTax",
+    text: "Did you or your spouse pay real estate (property) taxes on your home?",
+    hint: "State and local property taxes are deductible up to $10,000 total (SALT cap). Check your property tax bill or escrow statement.",
+    options: ["Yes", "No"],
+    inputId: "propertyTaxAmt",
+    inputLabel: "Total real estate property taxes paid ($)",
+    showInputIf: "Yes",
+  },
+  {
+    id: "personalPropertyTax",
+    text: "Did you or your spouse pay personal property tax — such as on a car or boat?",
+    hint: "State personal property taxes (like vehicle registration fees based on value) are also deductible, subject to the $10,000 SALT cap combined with real estate taxes.",
+    options: ["Yes", "No"],
+    inputId: "personalPropertyTaxAmt",
+    inputLabel: "Total personal property taxes paid ($)",
+    showInputIf: "Yes",
+  },
+  {
+    id: "stateTaxes",
+    text: "Did you or your spouse pay state and local income taxes or sales taxes?",
+    hint: "You can deduct either state income taxes OR sales taxes — whichever is higher. Combined with property taxes, the total SALT deduction is capped at $10,000.",
+    options: ["Yes — state income tax", "Yes — sales tax", "No"],
+    inputId: "stateTaxAmt",
+    inputLabel: "Total state income or sales taxes paid ($)",
+    showInputIf: "Yes — state income tax",
+  },
+  {
+    id: "investmentInterest",
+    text: "Did you or your spouse pay interest on money borrowed to buy investments?",
+    hint: "Interest paid on loans used to purchase taxable investments (margin interest) may be deductible up to your net investment income.",
+    options: ["Yes", "No"],
+    inputId: "investmentInterestAmt",
+    inputLabel: "Total investment interest expense paid ($)",
+    showInputIf: "Yes",
+  },
+  {
+    id: "casualtyLoss",
+    text: "Did you or your spouse suffer a casualty loss from a federally declared disaster?",
+    hint: "Losses from presidentially declared disasters (hurricanes, floods, wildfires) may be deductible after a 10% AGI reduction.",
+    options: ["Yes", "No"],
+    inputId: "casualtyLossAmt",
+    inputLabel: "Total unreimbursed disaster loss ($)",
     showInputIf: "Yes",
   },
   {
@@ -393,12 +438,13 @@ const QUESTIONS = [
   {
     id: "capitalGainsAmt",
     text: "What was your approximate net capital gain or loss?",
-    hint: "Net gain = what you sold it for minus what you paid for it. Check your 1099-B for this number. If you lost money, that is a loss.",
+    hint: "Net gain = what you sold it for minus what you paid for it. Check your 1099-B for this number. If you lost money, that is a loss — up to $3,000 can reduce your other income.",
     options: ["I have a gain", "I have a loss", "About even / not sure"],
     showIfCapGains: true,
     inputId: "capitalGainsManual",
-    inputLabel: "Enter your net capital gain or loss ($) — use a minus sign for losses",
+    inputLabel: "Enter your net capital gain or loss ($) — enter a negative number for losses (e.g. -2500)",
     showInputIf: "I have a gain",
+    showInputIfAlt: "I have a loss",
   },
   {
     id: "itemize",
@@ -444,7 +490,16 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   const medicalExpenses = parseFloat(manualInputs.medicalExpensesAmt) || 0;
   const charitableAmt = parseFloat(manualInputs.charitableAmt) || 0;
   const mortgageAmt = parseFloat(manualInputs.mortgageAmt) || 0;
+  const propertyTaxAmt = parseFloat(manualInputs.propertyTaxAmt) || 0;
+  const personalPropertyTaxAmt = parseFloat(manualInputs.personalPropertyTaxAmt) || 0;
+  const stateTaxAmt = parseFloat(manualInputs.stateTaxAmt) || 0;
+  const investmentInterestAmt = parseFloat(manualInputs.investmentInterestAmt) || 0;
+  const casualtyLossAmt = parseFloat(manualInputs.casualtyLossAmt) || 0;
   const estimatedPayments = parseFloat(manualInputs.estimatedTaxAmt) || 0;
+
+  // SALT cap: property tax + personal property + state/local income tax capped at $10,000
+  const totalSALT = propertyTaxAmt + personalPropertyTaxAmt + stateTaxAmt;
+  const deductibleSALT = Math.min(totalSALT, 10000);
 
   // Standard deduction 2025 — updated per One Big Beautiful Bill Act
   // Base: $31,500 MFJ, $15,750 Single
@@ -477,7 +532,10 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   const ssTaxable = provisionalIncome > 34000 ? data.socialSecurityBenefits * 0.85 : provisionalIncome > 25000 ? data.socialSecurityBenefits * 0.5 : 0;
 
   // Capital gains — from uploaded 1099-B OR manual Q&A entry
-  const manualCapGains = parseFloat(manualInputs.capitalGainsManual) || 0;
+  // Handle both gains and losses — negative value = loss
+  const manualCapGains = answers.capitalGainsAmt === "I have a loss"
+    ? -Math.abs(parseFloat(manualInputs.capitalGainsManual) || 0)  // ensure negative for losses
+    : parseFloat(manualInputs.capitalGainsManual) || 0;
   const rawCapGains = data.capitalGainsNet !== 0 ? data.capitalGainsNet : manualCapGains;
   const isLongTerm = answers.capitalGainsType === "Yes — held over 1 year (long-term)" ||
                      answers.capitalGainsType === "Mix of both";
@@ -493,7 +551,12 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   // Itemized deductions (Schedule A)
   const medicalThreshold = agi * 0.075; // 7.5% AGI floor
   const deductibleMedical = Math.max(0, medicalExpenses - medicalThreshold);
-  const itemizedTotal = deductibleMedical + charitableAmt + mortgageAmt;
+  // Investment interest capped at net investment income
+  const netInvestmentIncome = data.interestIncome + data.dividendIncome + Math.max(0, netCapGains);
+  const deductibleInvestmentInterest = Math.min(investmentInterestAmt, netInvestmentIncome);
+  // Casualty loss: 10% AGI floor for federally declared disasters
+  const deductibleCasualty = Math.max(0, casualtyLossAmt - agi * 0.10);
+  const itemizedTotal = deductibleMedical + charitableAmt + mortgageAmt + deductibleSALT + deductibleInvestmentInterest + deductibleCasualty;
 
   // Choose whichever is larger
   const useItemized = answers.itemize === "Yes, compare for me" && itemizedTotal > stdDeduction;
@@ -551,7 +614,20 @@ function compute1040(extractedData, answers, manualInputs = {}) {
     line12_deduction: Math.round(deduction),
     line12_enhancedSenior: enhancedSeniorDeduction,
     line12_isItemized: useItemized,
-    line12_itemizedBreakdown: { deductibleMedical: Math.round(deductibleMedical), charitableAmt, mortgageAmt, total: Math.round(itemizedTotal), stdForComparison: stdDeduction },
+    line12_itemizedBreakdown: {
+      deductibleMedical: Math.round(deductibleMedical),
+      charitableAmt,
+      mortgageAmt,
+      deductibleSALT: Math.round(deductibleSALT),
+      propertyTaxAmt,
+      personalPropertyTaxAmt,
+      stateTaxAmt,
+      totalSALTBeforeCap: Math.round(totalSALT),
+      deductibleInvestmentInterest: Math.round(deductibleInvestmentInterest),
+      deductibleCasualty: Math.round(deductibleCasualty),
+      total: Math.round(itemizedTotal),
+      stdForComparison: stdDeduction
+    },
     line15_taxableIncome: Math.round(taxableIncome),
     line16_ordinaryTax: ordinaryTax,
     line16_ltcgTax: ltcgTax,
@@ -1218,7 +1294,7 @@ export default function App() {
                       </button>
                     ))}
                   </div>
-                  {q.inputId && answers[q.id] === q.showInputIf && (
+                  {q.inputId && (answers[q.id] === q.showInputIf || (q.showInputIfAlt && answers[q.id] === q.showInputIfAlt)) && (
                     <div style={{ marginTop: "12px" }}>
                       <label style={{ fontSize: "15px", display: "block", marginBottom: "6px", color: colors.primary, fontWeight: "bold" }}>
                         {q.inputLabel}
