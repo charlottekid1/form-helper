@@ -423,6 +423,26 @@ const QUESTIONS = [
     showInputIf: "Yes",
   },
   {
+    id: "hasInterestIncome",
+    text: "Did you or your spouse earn interest from a bank, savings account, CD, or bonds?",
+    hint: "If yes, your bank should have sent you a 1099-INT. Interest income is taxable and goes on Line 2b of your 1040-SR.",
+    options: ["Yes", "No", "Not sure"],
+    inputId: "interestIncomeManual",
+    inputLabel: "Total interest income received ($) — from all 1099-INT forms",
+    showInputIf: "Yes",
+  },
+  {
+    id: "hasDividends",
+    text: "Did you or your spouse receive dividends from stocks or mutual funds?",
+    hint: "If yes, you should have received a 1099-DIV. Qualified dividends are taxed at a lower rate than ordinary income.",
+    options: ["Yes", "No", "Not sure"],
+    inputId: "dividendIncomeManual",
+    inputLabel: "Total ordinary dividends received ($) — from all 1099-DIV forms",
+    showInputIf: "Yes",
+    inputId2: "qualifiedDividendManual",
+    inputLabel2: "Of that, how much were qualified dividends ($)?",
+  },
+  {
     id: "hasCapitalGains",
     text: "Did you or your spouse sell any stocks, bonds, mutual funds, or property this year?",
     hint: "If yes, you should have received a 1099-B from your broker. Capital gains are taxed at special lower rates for seniors. This includes both spouses if filing jointly.",
@@ -487,6 +507,16 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   const isBlind = answers.blind === "Yes";
 
   // Manual inputs from Q&A
+  // Manual income overrides — used when documents not uploaded
+  const manualInterest = parseFloat(manualInputs.interestIncomeManual) || 0;
+  const manualDividends = parseFloat(manualInputs.dividendIncomeManual) || 0;
+  const manualQualifiedDiv = parseFloat(manualInputs.qualifiedDividendManual) || 0;
+
+  // Use document data if available, otherwise use manual entry
+  const finalInterest = data.interestIncome > 0 ? data.interestIncome : manualInterest;
+  const finalDividends = data.dividendIncome > 0 ? data.dividendIncome : manualDividends;
+  const finalQualifiedDiv = data.qualifiedDividends > 0 ? data.qualifiedDividends : manualQualifiedDiv;
+
   const medicalExpenses = parseFloat(manualInputs.medicalExpensesAmt) || 0;
   const charitableAmt = parseFloat(manualInputs.charitableAmt) || 0;
   const mortgageAmt = parseFloat(manualInputs.mortgageAmt) || 0;
@@ -518,7 +548,7 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   if (isMarried && answers.spouseAge65 === "Yes") enhancedSeniorDeduction += 6000;
   // Phase out: 6% reduction per dollar over threshold
   const phaseOutThreshold = isMarried ? 150000 : 75000;
-  const provisionalAGI = data.wages + data.retirementDistribution + data.interestIncome + data.dividendIncome;
+  const provisionalAGI = data.wages + data.retirementDistribution + finalInterest + finalDividends;
   if (provisionalAGI > phaseOutThreshold) {
     const excess = provisionalAGI - phaseOutThreshold;
     const reduction = Math.min(enhancedSeniorDeduction, Math.round(excess * 0.06));
@@ -528,7 +558,7 @@ function compute1040(extractedData, answers, manualInputs = {}) {
 
   // SS taxability (up to 85% taxable based on provisional income)
   const capitalGainsForSS = Math.max(0, data.capitalGainsNet);
-  const provisionalIncome = data.wages + data.retirementDistribution + data.interestIncome + data.dividendIncome + capitalGainsForSS + data.socialSecurityBenefits * 0.5;
+  const provisionalIncome = data.wages + data.retirementDistribution + finalInterest + finalDividends + capitalGainsForSS + data.socialSecurityBenefits * 0.5;
   const ssTaxable = provisionalIncome > 34000 ? data.socialSecurityBenefits * 0.85 : provisionalIncome > 25000 ? data.socialSecurityBenefits * 0.5 : 0;
 
   // Capital gains — from uploaded 1099-B OR manual Q&A entry
@@ -545,14 +575,14 @@ function compute1040(extractedData, answers, manualInputs = {}) {
     : (data.longTermGains || 0);
 
   // Total income (Line 9)
-  const totalIncome = data.wages + data.retirementDistribution + ssTaxable + data.interestIncome + data.dividendIncome + netCapGains;
+  const totalIncome = data.wages + data.retirementDistribution + ssTaxable + finalInterest + finalDividends + netCapGains;
   const agi = Math.max(0, totalIncome);
 
   // Itemized deductions (Schedule A)
   const medicalThreshold = agi * 0.075; // 7.5% AGI floor
   const deductibleMedical = Math.max(0, medicalExpenses - medicalThreshold);
   // Investment interest capped at net investment income
-  const netInvestmentIncome = data.interestIncome + data.dividendIncome + Math.max(0, netCapGains);
+  const netInvestmentIncome = finalInterest + finalDividends + Math.max(0, netCapGains);
   const deductibleInvestmentInterest = Math.min(investmentInterestAmt, netInvestmentIncome);
   // Casualty loss: 10% AGI floor for federally declared disasters
   const deductibleCasualty = Math.max(0, casualtyLossAmt - agi * 0.10);
@@ -601,9 +631,9 @@ function compute1040(extractedData, answers, manualInputs = {}) {
 
   return {
     line1a_wages: data.wages,
-    line2b_interest: data.interestIncome,
-    line3b_dividends: data.dividendIncome,
-    line3a_qualifiedDiv: data.qualifiedDividends,
+    line2b_interest: finalInterest,
+    line3b_dividends: finalDividends,
+    line3a_qualifiedDiv: finalQualifiedDiv,
     line4b_retirement: data.retirementDistribution,
     line5a_ssBenefits: data.socialSecurityBenefits,
     line5b_taxableSS: Math.round(ssTaxable),
@@ -1301,12 +1331,26 @@ export default function App() {
                       </label>
                       <input
                         type="number"
-                        min="0"
                         placeholder="Enter amount..."
                         value={manualInputs[q.inputId] || ""}
                         onChange={(e) => setManualInputs(prev => ({ ...prev, [q.inputId]: e.target.value }))}
                         style={{ padding: "12px 16px", fontSize: "18px", borderRadius: "10px", border: `2px solid ${colors.primary}`, width: "220px", outline: "none" }}
                       />
+                      {q.inputId2 && manualInputs[q.inputId] > 0 && (
+                        <div style={{ marginTop: "10px" }}>
+                          <label style={{ fontSize: "15px", display: "block", marginBottom: "6px", color: colors.primary, fontWeight: "bold" }}>
+                            {q.inputLabel2}
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Enter amount..."
+                            value={manualInputs[q.inputId2] || ""}
+                            onChange={(e) => setManualInputs(prev => ({ ...prev, [q.inputId2]: e.target.value }))}
+                            style={{ padding: "12px 16px", fontSize: "18px", borderRadius: "10px", border: `2px solid ${colors.primary}`, width: "220px", outline: "none" }}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
