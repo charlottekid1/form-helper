@@ -467,6 +467,33 @@ const QUESTIONS = [
     showInputIfAlt: "I have a loss",
   },
   {
+    id: "ltcInsurance",
+    text: "Did you or your spouse pay premiums for long-term care insurance?",
+    hint: "Long-term care insurance premiums may be deductible as a medical expense. The deductible amount depends on your age — older seniors can deduct more.",
+    options: ["Yes", "No"],
+    inputId: "ltcInsuranceAmt",
+    inputLabel: "Total long-term care insurance premiums paid ($)",
+    showInputIf: "Yes",
+  },
+  {
+    id: "mortgageNoForm1098",
+    text: "Did you pay mortgage interest to a private individual (not a bank) with no Form 1098?",
+    hint: "If you have a private mortgage — such as seller financing or a loan from a family member — the interest is still deductible but must be reported separately.",
+    options: ["Yes", "No"],
+    inputId: "mortgageNoForm1098Amt",
+    inputLabel: "Total mortgage interest paid to private individual ($)",
+    showInputIf: "Yes",
+  },
+  {
+    id: "nonCashCharity",
+    text: "Did you or your spouse donate non-cash items to charity (clothing, furniture, car, etc.)?",
+    hint: "Non-cash donations to qualified charities are deductible at fair market value. Donations over $500 require Form 8283. A donated car uses the sale price.",
+    options: ["Yes", "No"],
+    inputId: "nonCashCharityAmt",
+    inputLabel: "Total fair market value of non-cash donations ($)",
+    showInputIf: "Yes",
+  },
+  {
     id: "itemize",
     text: "Would you like us to check if itemizing saves you more than the standard deduction?",
     hint: "We will compare both and recommend whichever gives you a bigger deduction.",
@@ -525,6 +552,9 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   const stateTaxAmt = parseFloat(manualInputs.stateTaxAmt) || 0;
   const investmentInterestAmt = parseFloat(manualInputs.investmentInterestAmt) || 0;
   const casualtyLossAmt = parseFloat(manualInputs.casualtyLossAmt) || 0;
+  const mortgageNoForm1098Amt = parseFloat(manualInputs.mortgageNoForm1098Amt) || 0;
+  const nonCashCharityAmt = parseFloat(manualInputs.nonCashCharityAmt) || 0;
+  const ltcInsuranceAmt = parseFloat(manualInputs.ltcInsuranceAmt) || 0;
   const estimatedPayments = parseFloat(manualInputs.estimatedTaxAmt) || 0;
 
   // SALT cap: property tax + personal property + state/local income tax capped at $10,000
@@ -579,14 +609,20 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   const agi = Math.max(0, totalIncome);
 
   // Itemized deductions (Schedule A)
+  // LTC premiums are medical expenses — age-based limits per IRS
+  // Using max allowed (age 71+): $5,880 per person for 2025
+  const ltcDeductible = Math.min(ltcInsuranceAmt, 5880);
+  const totalMedical = medicalExpenses + ltcDeductible;
   const medicalThreshold = agi * 0.075; // 7.5% AGI floor
-  const deductibleMedical = Math.max(0, medicalExpenses - medicalThreshold);
+  const deductibleMedical = Math.max(0, totalMedical - medicalThreshold);
   // Investment interest capped at net investment income
   const netInvestmentIncome = finalInterest + finalDividends + Math.max(0, netCapGains);
   const deductibleInvestmentInterest = Math.min(investmentInterestAmt, netInvestmentIncome);
   // Casualty loss: 10% AGI floor for federally declared disasters
   const deductibleCasualty = Math.max(0, casualtyLossAmt - agi * 0.10);
-  const itemizedTotal = deductibleMedical + charitableAmt + mortgageAmt + deductibleSALT + deductibleInvestmentInterest + deductibleCasualty;
+  const totalMortgage = mortgageAmt + mortgageNoForm1098Amt;
+  const totalCharity = charitableAmt + nonCashCharityAmt;
+  const itemizedTotal = deductibleMedical + totalCharity + totalMortgage + deductibleSALT + deductibleInvestmentInterest + deductibleCasualty;
 
   // Choose whichever is larger
   const useItemized = answers.itemize === "Yes, compare for me" && itemizedTotal > stdDeduction;
@@ -646,8 +682,9 @@ function compute1040(extractedData, answers, manualInputs = {}) {
     line12_isItemized: useItemized,
     line12_itemizedBreakdown: {
       deductibleMedical: Math.round(deductibleMedical),
-      charitableAmt,
-      mortgageAmt,
+      ltcInsuranceAmt: Math.round(ltcDeductible),
+      charitableAmt: Math.round(totalCharity),
+      mortgageAmt: Math.round(totalMortgage),
       deductibleSALT: Math.round(deductibleSALT),
       propertyTaxAmt,
       personalPropertyTaxAmt,
