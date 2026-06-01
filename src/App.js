@@ -298,9 +298,9 @@ RULES:
 const QUESTIONS = [
   {
     id: "age65",
-    text: "Are you 65 years old or older?",
-    hint: "This affects your standard deduction — it's higher for seniors.",
-    options: ["Yes", "No"],
+    text: "What is your date of birth?",
+    hint: "This determines if you qualify for the senior standard deduction bonus and the new 2025 Enhanced Senior Deduction.",
+    options: ["Born before Jan 2, 1961 (age 65+)", "Born Jan 2, 1961 or later (under 65)"],
   },
   {
     id: "blind",
@@ -394,9 +394,9 @@ const QUESTIONS = [
   },
   {
     id: "spouseAge65",
-    text: "Is your spouse 65 years old or older?",
+    text: "What is your spouse's date of birth?",
     hint: "If your spouse is also 65+, you get an additional standard deduction bonus.",
-    options: ["Yes", "No"],
+    options: ["Born before Jan 2, 1961 (age 65+)", "Born Jan 2, 1961 or later (under 65)"],
     showIfMarried: true,
   },
   {
@@ -503,7 +503,7 @@ const QUESTIONS = [
 
 // ─── 1040 mapping logic ───────────────────────────────────────────────────────
 function is65OrSpouse65(answers) {
-  return answers.age65 === "Yes" || answers.spouseAge65 === "Yes";
+  return answers.age65 === "Born before Jan 2, 1961 (age 65+)" || answers.spouseAge65 === "Born before Jan 2, 1961 (age 65+)";
 }
 
 function compute1040(extractedData, answers, manualInputs = {}) {
@@ -530,7 +530,7 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   );
 
   const isMarried = answers.married === "Married Filing Jointly";
-  const is65 = answers.age65 === "Yes";
+  const is65 = answers.age65 === "Born before Jan 2, 1961 (age 65+)";
   const isBlind = answers.blind === "Yes";
 
   // Manual inputs from Q&A
@@ -557,9 +557,11 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   const ltcInsuranceAmt = parseFloat(manualInputs.ltcInsuranceAmt) || 0;
   const estimatedPayments = parseFloat(manualInputs.estimatedTaxAmt) || 0;
 
-  // SALT cap: property tax + personal property + state/local income tax capped at $10,000
+  // SALT cap: updated per OBBBA 2025
+  // New limits: $20,000 MFJ / $10,000 Single (doubled for joint filers)
+  const saltCap = isMarried ? 20000 : 10000;
   const totalSALT = propertyTaxAmt + personalPropertyTaxAmt + stateTaxAmt;
-  const deductibleSALT = Math.min(totalSALT, 10000);
+  const deductibleSALT = Math.min(totalSALT, saltCap);
 
   // Standard deduction 2025 — updated per One Big Beautiful Bill Act
   // Base: $31,500 MFJ, $15,750 Single
@@ -568,14 +570,14 @@ function compute1040(extractedData, answers, manualInputs = {}) {
   if (is65) stdDeduction += extraPerCondition;
   if (isBlind) stdDeduction += extraPerCondition;
   // Spouse bonuses (married filing jointly only)
-  if (isMarried && answers.spouseAge65 === "Yes") stdDeduction += 1600;
+  if (isMarried && answers.spouseAge65 === "Born before Jan 2, 1961 (age 65+)") stdDeduction += 1600;
   if (isMarried && answers.spouseBlind === "Yes") stdDeduction += 1600;
 
   // NEW 2025-2028: Enhanced Senior Deduction (One Big Beautiful Bill Act)
   // $6,000 per qualifying senior (age 65+), phases out above $75,000 single / $150,000 MFJ
   let enhancedSeniorDeduction = 0;
   if (is65) enhancedSeniorDeduction += 6000;
-  if (isMarried && answers.spouseAge65 === "Yes") enhancedSeniorDeduction += 6000;
+  if (isMarried && answers.spouseAge65 === "Born before Jan 2, 1961 (age 65+)") enhancedSeniorDeduction += 6000;
   // Phase out: 6% reduction per dollar over threshold
   const phaseOutThreshold = isMarried ? 150000 : 75000;
   const provisionalAGI = data.wages + data.retirementDistribution + finalInterest + finalDividends;
@@ -800,7 +802,7 @@ function TermsModal({ lang, onAccept }) {
               : "Form Helper is a free educational tool. It is NOT a licensed tax preparer. All results are estimates and MUST be reviewed by a professional before filing."}
           </div>
           {[
-            { icon: "📄", title: lang === "es" ? "No es asesoramiento fiscal profesional" : "Not professional tax advice", desc: lang === "es" ? "Form Helper produce borradores de orientación solamente. Siempre verifique los resultados con un CPA o sitio VITA gratuito del IRS antes de presentar su declaración." : "Form Helper produces draft guidance only. Always verify results with a CPA or free IRS VITA site before filing your return." },
+            { icon: "📄", title: lang === "es" ? "No es asesoramiento fiscal profesional" : "Not professional tax advice", desc: lang === "es" ? "Form Helper produce borradores de orientación solamente. Siempre verifique los resultados con un profesional de impuestos o sitio VITA gratuito del IRS antes de presentar su declaración." : "Form Helper produces draft guidance only. Always verify results with a tax professional or free IRS VITA site before filing your return." },
             { icon: "🔒", title: lang === "es" ? "Sus documentos no se almacenan" : "Your documents are not stored", desc: lang === "es" ? "Los documentos se procesan en su navegador y se envían a Google Gemini AI. Este sitio no almacena ningún documento ni información personal." : "Documents are processed in your browser and sent to Google Gemini AI. This site stores no documents or personal information." },
             { icon: "🤖", title: lang === "es" ? "Procesamiento de IA por Google" : "AI processing by Google", desc: lang === "es" ? "Esta aplicación usa la API de Google Gemini. En el nivel gratuito, Google puede usar los datos para mejorar sus modelos." : "This app uses the Google Gemini API. On the free tier, Google may use inputs to improve their models." },
             { icon: "⚖️", title: lang === "es" ? "Limitación de responsabilidad" : "Limitation of liability", desc: lang === "es" ? "Form Helper se proporciona sin garantías. Aarthi Nelatoor no es responsable de errores en los resultados." : "Form Helper is provided without warranties. Aarthi Nelatoor is not liable for errors in results." },
@@ -1509,24 +1511,49 @@ export default function App() {
         {/* STEP 3: Results */}
         {step === 3 && result && (
           <div>
-            {/* Refund / owed banner */}
-            <div style={{
-              ...styles.card,
-              background: result.line35a_refund > 0 ? colors.successLight : colors.dangerLight,
-              border: `2px solid ${result.line35a_refund > 0 ? "#A9DFBF" : "#F1948A"}`,
-              textAlign: "center",
-              padding: "32px",
-            }}>
-              <div style={{ fontSize: "48px" }}>{result.line35a_refund > 0 ? "🎉" : "📬"}</div>
-              <div style={{ fontSize: "22px", fontWeight: "bold", marginBottom: "8px", color: result.line35a_refund > 0 ? colors.success : colors.danger }}>
-                {result.line35a_refund > 0
-                  ? `Estimated Refund: ${fmt(result.line35a_refund)}`
-                  : `Estimated Amount Owed: ${fmt(result.line37_amountOwed)}`}
-              </div>
-              <div style={{ fontSize: "16px", color: colors.textMuted }}>
-                This is an estimate based on your documents. A tax professional can verify the final number.
-              </div>
-            </div>
+            {/* Not required to file message */}
+            {(() => {
+              const filingThreshold = answers.married === "Married Filing Jointly"
+                ? (is65OrSpouse65(answers) ? 32300 : 29200)
+                : (answers.age65 === "Born before Jan 2, 1961 (age 65+)" ? 16550 : 14600);
+              const notRequired = result.line7_totalIncome < filingThreshold && result.line25a_fedWithheld === 0;
+              return notRequired ? (
+                <div style={{ ...styles.card, background: colors.primaryLight, border: `2px solid #AED6F1`, textAlign: "center", padding: "32px" }}>
+                  <div style={{ fontSize: "48px", marginBottom: "12px" }}>✅</div>
+                  <div style={{ fontSize: "22px", fontWeight: "bold", color: colors.primary, marginBottom: "8px" }}>
+                    {lang === "es" ? "No está obligado a presentar una declaración" : "You Are Not Required to File a Tax Return"}
+                  </div>
+                  <div style={{ fontSize: "16px", color: colors.textMuted, lineHeight: "1.6" }}>
+                    {lang === "es"
+                      ? `Su ingreso total de ${fmt(result.line7_totalIncome)} está por debajo del umbral de presentación de ${fmt(filingThreshold)} para su situación. No necesita presentar una declaración de impuestos este año.`
+                      : `Your total income of ${fmt(result.line7_totalIncome)} is below the ${fmt(filingThreshold)} filing threshold for your situation. You do not need to file a tax return this year.`}
+                  </div>
+                  <div style={{ marginTop: "16px", fontSize: "15px", color: colors.primary, fontWeight: "bold" }}>
+                    {lang === "es" ? "💡 Sin embargo, si se retuvo impuesto federal, puede presentar para obtener un reembolso." : "💡 However, if federal tax was withheld, you may still want to file to get a refund."}
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  ...styles.card,
+                  background: result.line35a_refund > 0 ? colors.successLight : colors.dangerLight,
+                  border: `2px solid ${result.line35a_refund > 0 ? "#A9DFBF" : "#F1948A"}`,
+                  textAlign: "center",
+                  padding: "32px",
+                }}>
+                  <div style={{ fontSize: "48px" }}>{result.line35a_refund > 0 ? "🎉" : "📬"}</div>
+                  <div style={{ fontSize: "22px", fontWeight: "bold", marginBottom: "8px", color: result.line35a_refund > 0 ? colors.success : colors.danger }}>
+                    {result.line35a_refund > 0
+                      ? `${lang === "es" ? "Reembolso Estimado" : "Estimated Refund"}: ${fmt(result.line35a_refund)}`
+                      : `${lang === "es" ? "Cantidad Estimada a Pagar" : "Estimated Amount Owed"}: ${fmt(result.line37_amountOwed)}`}
+                  </div>
+                  <div style={{ fontSize: "16px", color: colors.textMuted }}>
+                    {lang === "es"
+                      ? "Esta es una estimación. Un profesional de impuestos puede verificar el número final."
+                      : "This is an estimate based on your documents. A tax professional can verify the final number."}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* 1040 Line breakdown */}
             <div style={styles.card}>
@@ -1728,7 +1755,7 @@ export default function App() {
               <div id="summary-letter" style={{ background: "#f9f7f3", border: `1px solid ${colors.border}`, borderRadius: "12px", padding: "28px", fontFamily: "Georgia, serif", fontSize: "15px", lineHeight: "1.9", marginBottom: "16px" }}>
                 <div style={{ textAlign: "right", color: colors.textMuted, fontSize: "13px" }}>Form Helper — {new Date().toLocaleDateString()}</div>
                 <div style={{ fontWeight: "bold", fontSize: "18px", margin: "12px 0 20px" }}>
-                  {lang === "es" ? "Estimado Preparador de Impuestos:" : "Dear Tax Preparer,"}
+                  {lang === "es" ? "Estimado Preparador de Impuestos:" : "Dear Tax Professional,"}
                 </div>
                 <p style={{ marginBottom: "14px" }}>
                   {lang === "es"
@@ -1773,7 +1800,7 @@ export default function App() {
             <div style={styles.card}>
               <div style={styles.sectionTitle}>📌 {lang === "es" ? "Próximos Pasos" : "What to Do Next"}</div>
               {[
-                { icon: "👩‍💼", text: lang === "es" ? "Lleve este resumen a un sitio VITA del IRS o a un CPA para revisión final." : "Take this summary to a free IRS VITA site or a CPA for final review." },
+                { icon: "👩‍💼", text: lang === "es" ? "Lleve este resumen a un sitio VITA del IRS o a un profesional de impuestos para revisión final." : "Take this summary to a free IRS VITA site or a tax professional for final review." },
                 { icon: "🖨️", text: lang === "es" ? "Imprima esta página o guárdela como PDF para llevarla." : "Print this page or save it as a PDF to bring with you." },
                 { icon: "📂", text: lang === "es" ? "Traiga sus documentos originales (W-2, 1099s, carta del Seguro Social)." : "Bring your original documents (W-2, 1099s, SS letter) to the appointment." },
                 { icon: "🔒", text: lang === "es" ? "Sus documentos NO fueron guardados. Todo se procesó en memoria solamente." : "Your documents were NOT saved or stored. All data processed in memory only." },
